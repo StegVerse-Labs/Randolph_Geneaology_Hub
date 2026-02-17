@@ -137,6 +137,32 @@ RND-c1760-001-VA  Peyton Randolph Sr
 
 ⸻
 
+No lineage link may rest solely on Grade D evidence.
+
+⸻
+
+🌍 Verified Migration Pattern (Current Ledger Status)
+
+Virginia → Tennessee → Arkansas → Missouri → Indiana → Oregon
+
+This pattern is documented at transcribed-primary level (Grade B).
+Primary-source upgrade is ongoing.
+
+⸻
+
+📌 Current Confirmed Generational Line (Structured)
+
+RND-c1760-001-VA  Peyton Randolph Sr
+└── RND-1796-001-TN  Ruben Randolph
+└── RND-1827-001-TN  Isaac Randolph
+└── RND-1853-001-MO  Elijah Randolph
+└── RND-1875-001-IN  Benjamin Franklin Randolph
+└── RND-1909-001-OR  Col. Jack Lindley Randolph
+└── Frank Edward Randolph
+└── Rigel Theoden Randolph
+
+⸻
+
 🔬 Research Status
 
 Current evidence strength:
@@ -200,3 +226,6 @@ Evidence second.
 Expansion third.
 
 Legacy always.
+
+⸻
+
