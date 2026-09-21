@@ -177,6 +177,11 @@ Planned modules:
 -   GEDCOM export module\
 -   Multi-family namespace expansion
 
+See [`docs/MYKV_SERVICE_DESIGN.md`](docs/MYKV_SERVICE_DESIGN.md) for the
+draft design turning this into an open, corroboration-confirmed service
+with optional [MyKV](https://github.com/StegVerse-Labs/continuity-vault-kit)
+integration.
+
 ------------------------------------------------------------------------
 
 ## 🏁 Status

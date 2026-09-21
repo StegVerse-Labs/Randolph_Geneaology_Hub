@@ -18,3 +18,6 @@ Evidence‑anchored family history with privacy controls.
 - Living people private by default
 - Evidence first
 - Forkable, no lock‑in
+
+## Roadmap
+- [Design: a corroboration-confirmed service with MyKV integration](MYKV_SERVICE_DESIGN.md)
