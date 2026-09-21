@@ -12,9 +12,9 @@ Primary_Locations:
 # Parentage
 
 Father_CID: RND-1875-001-IN  
-Mother_CID: LND-1885-001-TX  
+Mother_CID: LND-1885-001-MN  
 Evidence_Level: C  
-Notes: Listed as sibling of Col. Jack Lindley Randolph in compiled notes.
+Notes: Listed as sibling of Col. Jack Lindley Randolph in compiled notes. Mother_CID corrected from the placeholder LND-1885-001-TX (an unconfirmed research label with no Individuals/ file — see Research/LND-1885-001-TX__Sibling_Cluster.md) to LND-1885-001-MN, the registered record for Lucy Ann Lindley Jones, whose Spouse_CID (RND-1875-001-IN) already confirms her as Benjamin Franklin Randolph's wife.
 
 # Marriages
 

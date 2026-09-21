@@ -1,7 +1,10 @@
 # How to Contribute
 
 1. Fork the repo
-2. Create or update files in `/profiles`, `/stories`, or `/branches`
+2. Create or update files in `Individuals/`, `Research/`, `Source_Registry/`,
+   or `profiles/` — see `Standards/Schema_v1.md` for the required structure
+   of an Individual record and `CID_Index_Master.md` for how to register a
+   new Canonical ID before referencing it elsewhere
 3. Add sources or citations when available
 4. Submit a Pull Request describing your update
 

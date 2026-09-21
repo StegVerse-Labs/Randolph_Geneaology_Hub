@@ -88,14 +88,17 @@ This prevents:
     Randolph_Genealogy_Hub/
     │
     ├── Individuals/
-    ├── Cemeteries/
+    ├── Research/
     ├── Source_Registry/
     ├── Lineage_Trees/
-    ├── Migration_Maps/
+    ├── profiles/
+    ├── docs/
     └── Standards/
-        ├── Genealogy_Naming_Contract_v1.md
         ├── Evidence_Grading.md
-        └── Schema_v1.md
+        ├── Schema_v1.md
+        └── Living_Persons_Privacy_Protocol.md
+
+    Cemetery indexing and migration maps are planned — see Future Expansion.
 
 ------------------------------------------------------------------------
 
@@ -176,6 +179,11 @@ Planned modules:
 -   Migration visualization\
 -   GEDCOM export module\
 -   Multi-family namespace expansion
+
+See [`docs/MYKV_SERVICE_DESIGN.md`](docs/MYKV_SERVICE_DESIGN.md) for the
+draft design turning this into an open, corroboration-confirmed service
+with optional [MyKV](https://github.com/StegVerse-Labs/continuity-vault-kit)
+integration.
 
 ------------------------------------------------------------------------
 
