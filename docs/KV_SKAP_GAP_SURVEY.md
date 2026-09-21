@@ -295,7 +295,57 @@ changes are owed there.
 
 ---
 
-## 9. Relation to this repo
+## 9. Relation to the StegOS Node Manifold lane
+
+`STEGOS-NODE-MANIFOLD-001` is the longer-term goal this work eventually
+serves. Two things about it matter here.
+
+**It does not block the KV/SKAP lane.** Verified, not assumed:
+`stegos/device_kv_skap_roundtrip.py` and `stegos/skap_kv_device_roundtrip.py`
+contain **zero** references to node or manifold, and import only
+`stegos.intr_backbone` and `stegos.universal_intr_transport`. The four-leg
+roundtrip is `DEVICE_SYSTEM -> KV -> SKAP_VAULT -> KV -> DEVICE_SYSTEM`, which
+never crosses into `STEGOS_ECOSYSTEM`. The two stacks run in parallel and meet
+at `DEVICE_SYSTEM`; neither gates the other.
+
+**Its primary handoff carries a stale gate table.**
+`docs/STEGOS_NODE_MANIFOLD_MIRROR_HANDOFF.md` (updated 2026-08-24, citing CI
+runs in the 327xxxxx range) lists steps 2–6 of its physical proof sequence as
+`PENDING_REAL_DEVICE_EVENT` / `PENDING_REAL_ARTIFACT`. Those are **done**.
+`docs/STEGOS_HISTORICAL_PHYSICAL_EVIDENCE_RECONCILIATION.md` supersedes it
+explicitly and warns against re-doing them:
+
+> Do not repeat completed first-Node events merely to satisfy newer schemas.
+
+The first real Node — `stegnode-web-cc9e0b8608af6043aed37808004b0233`,
+`ESTABLISHED_REUSED`, journal replay PASS / 33 entries — records
+`new/backdated Receipt #1 required: FALSE`. Current accounting reads
+everything `COMPLETE` down to `genuine second physical peer export:
+PENDING_NEW_PHYSICAL_EVENT`.
+
+**Registration is device-local and never reaches the repository.** A Node's
+genesis lives in that browser's IndexedDB. The repository learns of a Node only
+when its `stegos.node_physical_evidence_export.v1` is exported and ingested
+through merged PR #48. So additional devices can have registered while the gate
+still reads pending — the two facts are compatible. The owed artifact is the
+**export**, not another registration.
+
+**The distinctness gate is weaker than the invariant it serves.**
+`real_peer_manifold_pipeline._require_local_distinctness` requires four fields
+to differ — `node_id`, `device_binding_sha256`, `interlock_id`, and
+`local_receipt_head.receipt_sha256` — but `node_id` and `interlock_id` are both
+`sha256(label + ":" + device_binding_sha256)`, so all four collapse onto
+`device_binding_sha256`. That value is `sha256(crypto.getRandomValues(32))`
+generated at first registration and persisted in IndexedDB, with
+`hardware_attestation_claimed: false`. The gate therefore cannot distinguish a
+second physical device from a second browser profile or a private window; any
+storage-isolated context passes. Manifold invariant 12 says physical evidence
+cannot be replaced by deterministic fixtures or source completion, so this is
+worth hardening before release evaluation.
+
+---
+
+## 10. Relation to this repo
 
 `docs/MYKV_SERVICE_DESIGN.md` §10 pauses the genealogy hub pending KV. This
 survey does not change that. It does narrow it: the hub's storage question
