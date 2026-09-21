@@ -9,7 +9,7 @@ Reconstruct verified sibling sets using census household data.
 
 Target:
 - RND-1875-001-IN (Benjamin Franklin Randolph)
-- LND-1885-001-TX (Lucy Ann Lindley)
+- LND-1885-001-MN (Lucy Ann Lindley Jones)
 
 Locate census in:
 - 1910
