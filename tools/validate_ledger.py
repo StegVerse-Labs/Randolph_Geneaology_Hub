@@ -10,6 +10,9 @@ Checks:
      has an Individuals/ file.
   4. CID_Index_Master.md's generated block matches what Individuals/*.md
      actually contains.
+  5. Every Canonical_ID's namespace is registered in NAMESPACES.md — see
+     that file for what a namespace is and how a forked hub registers
+     its own.
 
 Usage:
   python3 tools/validate_ledger.py          # check only; exit 1 on any problem
@@ -22,11 +25,13 @@ import pathlib
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 INDIVIDUALS = ROOT / "Individuals"
 INDEX_FILE = ROOT / "CID_Index_Master.md"
+NAMESPACES_FILE = ROOT / "NAMESPACES.md"
 
 BEGIN_MARKER = "<!-- BEGIN GENERATED: tools/validate_ledger.py -->"
 END_MARKER = "<!-- END GENERATED -->"
 
 CID_STRICT = re.compile(r"^[A-Z]{2,4}-(?:c\d{3,4}|\d{3,4})-[A-Za-z0-9.]+-[A-Z]{2}$")
+NAMESPACE_ROW_RE = re.compile(r"^\|\s*`([A-Z]{2,4})`\s*\|", re.MULTILINE)
 FIELD_RE = re.compile(r"^(?:Father_CID|Mother_CID|Spouse_CID):\s*(\S+)", re.MULTILINE)
 BULLET_RE = re.compile(r"^-\s+(\S+)", re.MULTILINE)
 CANONICAL_RE = re.compile(r"^Canonical_ID:\s*(\S+)", re.MULTILINE)
@@ -103,6 +108,29 @@ def check_references(records):
     return errors
 
 
+def load_registered_namespaces():
+    if not NAMESPACES_FILE.exists():
+        return None, [f"{NAMESPACES_FILE.relative_to(ROOT)}: file is missing"]
+    text = NAMESPACES_FILE.read_text(encoding="utf-8")
+    namespaces = set(NAMESPACE_ROW_RE.findall(text))
+    if not namespaces:
+        return None, [f"{NAMESPACES_FILE.relative_to(ROOT)}: no namespace rows found (expected a `| `XYZ` | ... |` table row)"]
+    return namespaces, []
+
+
+def check_namespaces(records, registered):
+    errors = []
+    for cid, rec in records.items():
+        m = re.match(r"^([A-Z]{2,4})-", cid)
+        ns = m.group(1) if m else None
+        if ns not in registered:
+            errors.append(
+                f"{rec['file'].relative_to(ROOT)}: Canonical_ID '{cid}' uses namespace "
+                f"'{ns}', which isn't registered in {NAMESPACES_FILE.relative_to(ROOT)}"
+            )
+    return errors
+
+
 def generated_block(records):
     lines = [f"{cid} – {records[cid]['name']}" for cid in sorted(records, key=sort_key)]
     return "\n".join(lines)
@@ -122,6 +150,11 @@ def main():
     write = "--write" in sys.argv
     records, errors = load_individuals()
     errors.extend(check_references(records))
+
+    registered_namespaces, namespace_errors = load_registered_namespaces()
+    errors.extend(namespace_errors)
+    if registered_namespaces is not None:
+        errors.extend(check_namespaces(records, registered_namespaces))
 
     new_text, marker_error = rewrite_index(records)
     if marker_error:
