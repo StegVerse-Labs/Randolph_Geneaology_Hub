@@ -341,7 +341,7 @@ above.
 | 2 | ✅ Claim schema (`schemas/claim.schema.json`) + `Claims/` directory + CID Registrar (`tools/cid_registrar.py`, mints a CID only from a confirmed Claim) | No |
 | 3 | ✅ Corroboration engine (§4) generates Confirmed Records from Claims (`tools/cid_registrar.py`, extended beyond Phase 2's minimal stub); `tools/export_kv_claim.py` for MyKV v0 (§5.2) | No |
 | 4 | ✅ Multi-family namespaces — `NAMESPACES.md` registry + `tools/validate_ledger.py`/`tools/cid_registrar.py` enforcement, `docs/start.md` walkthrough | No |
-| 5 | API layer + hosted read service, so records are browsable without cloning the repo | No (but needs a hosting decision) |
+| 5 | 📋 Planned (§8), not built. Read-only GitHub Pages site: no blocker. Write API: design settled, hosting platform still open | Read-only: No. Write API: needs a hosting decision |
 | 6 | Governed live MyKV sync via Interlock/InTr (§5.3) | **Yes** — StegVerse-Labs shared runtime |
 
 Phases 0–5 are buildable entirely inside this repo and don't require
@@ -351,20 +351,93 @@ same way MyKV treats its own unbuilt capabilities.
 
 ---
 
-## 8. Open questions
+## 8. Phase 5 plan: hosted read service
+
+Planned, not yet built. This section exists to answer *how*, so that
+whenever building it starts, it starts from a decision rather than a
+blank page.
+
+### 8.1 Split the read side from the write side
+
+These have very different risk profiles and should not be planned as one
+lump:
+
+- **Read-only browsing** — a visitor sees confirmed records, sourced
+  claims, and contested facts without cloning the repo. This needs no new
+  infrastructure, no credentials, and no hosting decision: **GitHub
+  Pages**, which `docs/index.md`'s existing Jekyll front matter already
+  targets. This is the part of Phase 5 that's ready to build whenever
+  it's prioritized.
+- **Write access over HTTP** (submitting a Claim without a GitHub
+  account/PR) — this is the part that genuinely needs a hosting decision
+  (platform, who holds any credentials, cost, abuse handling) and stays
+  explicitly deferred; §8.3 below records the recommended shape for
+  *when* that decision gets made, so it doesn't have to be re-derived
+  from scratch later.
+
+### 8.2 Read-only site (buildable now, no decision needed)
+
+Render straight from the same files the validator already trusts —
+never a separate database that could drift from `Individuals/`/`Claims/`:
+
+- **Generator**: Jekyll (GitHub Pages' native engine) reading
+  `Individuals/*.md`, `CID_Index_Master.md`, `Claims/*.json`,
+  `Source_Registry/`, and `Research/` as Jekyll *data files*/collections,
+  rather than a custom static-site generator — avoids adding a build
+  dependency GitHub Pages doesn't already run for free.
+- **Pages**: a namespace index (one per `NAMESPACES.md` entry), a person
+  page per confirmed CID (rendering the same sections `Schema_v1.md`
+  requires, plus a "claims behind this record" panel for claim-managed
+  entries), a pending/contested Claims dashboard (surfaces exactly the
+  `contested` and not-yet-confirmed clusters `tools/cid_registrar.py`
+  already computes), and a search/browse index across all namespaces.
+- **Freshness**: a GitHub Actions step (alongside the existing
+  `test-readiness.yml` checks) rebuilds and deploys the Pages site on
+  every push to `main` — no separate deploy credential beyond what
+  GitHub Pages' own `actions/deploy-pages` action already uses.
+- **Privacy**: the generator must apply `Standards/Living_Persons_Privacy_Protocol.md`
+  at render time, not just trust that `Individuals/*.md` already
+  redacted everything — a defense-in-depth check, since a public static
+  site is a bigger exposure surface than a repo a contributor has to
+  clone first.
+
+### 8.3 Write API (deferred — recorded for whenever it's decided)
+
+The recommended shape, so the eventual hosting decision only has to pick
+a platform, not redesign the approach: **the API's only job is to open a
+PR**, authenticated as a bot/service account, adding one `Claims/*.json`
+file per submission — it does not reimplement corroboration, minting, or
+generation logic. That stays exactly what it is today:
+`tools/cid_registrar.py`, running in CI on the resulting PR, unchanged.
+This avoids needing a database (the repo *is* the database), sidesteps
+reimplementing the fail-closed validation this design leans on so
+heavily, and means a submission is inherently reviewable before it lands
+on `main`, matching the "reversible, transparent" commitments in
+`README.md` and `docs/ethics.md`.
+
+What's still genuinely open, and needs a person to decide rather than
+tooling to derive: which hosting platform runs that thin API layer, who
+holds the bot account's PR-creation credential, and what abuse/rate-limit
+protection a public write endpoint needs that a PR-only workflow doesn't.
+
+---
+
+## 9. Open questions
 
 1. **Submitter identity for independence checks (§4.1):** GitHub account
    is enough for v0. Do we want an explicit link to a MyKV instance ID
    later, so corroboration can distinguish "two different people" from
    "one person's two KV instances" more rigorously?
-2. **Hosting for Phase 5's read API/site** — GitHub Pages (already partly
-   set up via `docs/index.md`'s Jekyll front matter) is enough for a
-   read-only browsable ledger; anything with a write API needs a real
-   hosting decision.
+2. ~~**Hosting for Phase 5's read API/site**~~ — **narrowed, not fully
+   resolved**: see §8. The read-only side needs no decision (GitHub
+   Pages). The write-API side's *design* is settled (a thin PR-opening
+   layer in front of the unchanged Claims/CI pipeline, §8.3) but its
+   *hosting platform* is still genuinely open and deferred until someone
+   decides to build it.
 3. ~~**Multi-family namespace governance (Phase 4)**~~ — **resolved**:
    fork-based, per `README.md`'s "Enable duplication across other
    families." A new family forks this repo and registers its own
-   namespace(s) in `NAMESPACES.md` (§ below); this repo can also grow a
+   namespace(s) in `NAMESPACES.md`; this repo can also grow a
    *second* namespace directly (documented in `NAMESPACES.md` itself) if
    a connected family's line is being researched here rather than
    separately. Either way, `tools/validate_ledger.py` and
