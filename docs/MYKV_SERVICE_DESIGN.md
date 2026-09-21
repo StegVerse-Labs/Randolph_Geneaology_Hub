@@ -299,8 +299,8 @@ above.
 
 | Phase | Deliverable | Depends on external infra? |
 |---|---|---|
-| 0 | Fix the 3 CID bugs above, dedupe `FAMILY_TREE.md` and the duplicate Research files, fix dead links (`docs/start.md`, `/stories`, `/branches`, `Standards/Genealogy_Naming_Contract_v1.md`) | No |
-| 1 | CID/reference validator wired into `.github/workflows/test-readiness.yml`; `CID_Index_Master.md` becomes generated | No |
+| 0 | ✅ Fix the 3 CID bugs above, dedupe `FAMILY_TREE.md` and the duplicate Research files, fix dead links (`docs/start.md`, `/stories`, `/branches`, `Standards/Genealogy_Naming_Contract_v1.md`) | No |
+| 1 | ✅ CID/reference validator (`tools/validate_ledger.py`) wired into `.github/workflows/test-readiness.yml`; `CID_Index_Master.md` becomes generated | No |
 | 2 | Claim schema + `Claims/` directory + CID Registrar (mints a CID only from a confirmed Claim) | No |
 | 3 | Corroboration engine (§4) generates Confirmed Records from Claims; `tools/export_kv_claim.py` for MyKV v0 (§5.2) | No |
 | 4 | Multi-family namespaces (already gestured at in `README.md`'s "Multi-family namespace expansion" and `docs/assets/Start_Your_Own_Family_Hub.pdf`) — anyone forks or registers a new `<NS>` | No |

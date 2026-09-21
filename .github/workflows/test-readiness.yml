@@ -58,3 +58,5 @@ jobs:
 
           print('TEST READINESS PASSED')
           PY
+      - name: Validate CID ledger
+        run: python3 tools/validate_ledger.py
