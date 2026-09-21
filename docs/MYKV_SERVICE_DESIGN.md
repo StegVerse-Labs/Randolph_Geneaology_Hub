@@ -74,24 +74,37 @@ or credentials — only bounded, explicit submissions (§5).
 
 A Claim is the unit anyone submits. One Claim = one assertion.
 
-```yaml
-claim_id: CLM-<uuid>
-claim_type: parent_child | birth | death | marriage | burial | migration | military | occupation
-subject_cid: RND-1796-001-TN        # or UNK-PENDING if the subject has no CID yet
-object_cid: RND-c1760-001-VA        # e.g. the parent, for parent_child claims
-assertion:
-  # shape depends on claim_type, e.g. for birth:
-  date: 1796
-  place: Tennessee, USA
-source:
-  evidence_level: C                 # A–D, per Standards/Evidence_Grading.md
-  description: "Find A Grave memorial transcription"
-  source_id: SRC-FindAGrave-42802428   # must resolve in Source_Registry/
-submitted_by: <submitter_identity>   # §4.1
-submitted_at: 2026-09-21
-corroborations: []                   # filled in as others submit matching claims
-status: pending | confirmed | contested | rejected
+**Implemented as of Phase 2** (this sketch was illustrative; the shipped
+format is JSON, not YAML, to stay dependency-free — no PyYAML in CI —
+and uses `PENDING:<key>` rather than a single `UNK-PENDING` sentinel so
+multiple claims can agree on *which* not-yet-registered person they're
+about):
+
+```json
+{
+  "claim_id": "CLM-ruben-randolph-marriage-01",
+  "claim_type": "birth",
+  "subject_cid": "PENDING:margaret-randolph-1850-tn",
+  "assertion": {
+    "full_legal_name": "Margaret Randolph",
+    "namespace": "RND",
+    "birth_year": 1850,
+    "birth_state": "TN"
+  },
+  "source": {
+    "evidence_level": "C",
+    "description": "Find A Grave memorial transcription",
+    "source_id": "SRC-FindAGrave-42802428"
+  },
+  "submitted_by": "some-github-username",
+  "submitted_at": "2026-09-21",
+  "status": "pending"
+}
 ```
+
+Full field-by-field documentation lives in `schemas/claim.schema.json`
+and `Claims/README.md`, which are the source of truth from here on —
+this section stays illustrative.
 
 Claims are additive and append-only. Nobody edits someone else's Claim;
 disagreement is expressed by submitting a *contradicting* Claim, which the
@@ -131,16 +144,24 @@ self-reported.
 
 ### 4.2 Promotion table
 
-| Claim evidence grade | Confirmation requirement |
+Confirmation is decided per cluster of claims that share the same
+`subject_cid` + `claim_type` + *identical* `assertion` content (a
+differing assertion is a contradiction, not a weaker corroboration — see
+§4.3). Within a cluster, the requirement is the **total number of
+distinct submitters**, sized to the strongest evidence grade present:
+
+| Best evidence grade in the cluster | Distinct submitters required |
 |---|---|
-| A (primary document) | 1 submission is enough — the source itself is the corroboration |
-| B (transcribed primary) | 1 independent corroborating submission *or* 1 A-grade source |
-| C (secondary/compiled) | 2 independent corroborating submissions, or 1 upgrade to B/A-grade source |
+| A (primary document) | 1 — the source itself is the corroboration |
+| B (transcribed primary) | 2 (the original submission plus 1 independent corroboration) |
+| C (secondary/compiled) | 3 (the original submission plus 2 independent corroborations) |
 | D (oral history/unsourced) | Never auto-confirms — matches the existing repo-wide rule that no lineage link may rest solely on Grade D. D-grade claims can only be *linked as context* on a confirmed record, never form the link itself |
 
 This is a direct extension of `Standards/Evidence_Grading.md`'s existing
 "No lineage link may rest solely on Grade D evidence" — corroboration count
-is the new mechanism, evidence grade is still the ceiling.
+is the new mechanism, evidence grade is still the ceiling. Implemented in
+`tools/cid_registrar.py`'s `evaluate()`; see `Claims/README.md` for the
+worked-through algorithm description.
 
 ### 4.3 Contradictions
 
@@ -301,7 +322,7 @@ above.
 |---|---|---|
 | 0 | ✅ Fix the 3 CID bugs above, dedupe `FAMILY_TREE.md` and the duplicate Research files, fix dead links (`docs/start.md`, `/stories`, `/branches`, `Standards/Genealogy_Naming_Contract_v1.md`) | No |
 | 1 | ✅ CID/reference validator (`tools/validate_ledger.py`) wired into `.github/workflows/test-readiness.yml`; `CID_Index_Master.md` becomes generated | No |
-| 2 | Claim schema + `Claims/` directory + CID Registrar (mints a CID only from a confirmed Claim) | No |
+| 2 | ✅ Claim schema (`schemas/claim.schema.json`) + `Claims/` directory + CID Registrar (`tools/cid_registrar.py`, mints a CID only from a confirmed Claim) | No |
 | 3 | Corroboration engine (§4) generates Confirmed Records from Claims; `tools/export_kv_claim.py` for MyKV v0 (§5.2) | No |
 | 4 | Multi-family namespaces (already gestured at in `README.md`'s "Multi-family namespace expansion" and `docs/assets/Start_Your_Own_Family_Hub.pdf`) — anyone forks or registers a new `<NS>` | No |
 | 5 | API layer + hosted read service, so records are browsable without cloning the repo | No (but needs a hosting decision) |

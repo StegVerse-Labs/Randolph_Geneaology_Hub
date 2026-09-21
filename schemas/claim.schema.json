@@ -1,0 +1,54 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/StegVerse-Labs/Randolph_Geneaology_Hub/schemas/claim.schema.json",
+  "title": "Randolph Genealogy Hub Claim",
+  "description": "One atomic, sourced genealogical assertion submitted for corroboration. See Claims/README.md and docs/MYKV_SERVICE_DESIGN.md for the full model. This file documents the shape; tools/cid_registrar.py is the actual runtime validator (kept dependency-free, so this schema is not executed at CI time).",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["claim_id", "claim_type", "subject_cid", "assertion", "source", "submitted_by", "submitted_at", "status"],
+  "properties": {
+    "claim_id": {
+      "type": "string",
+      "pattern": "^CLM-[a-z0-9-]+$",
+      "description": "Unique, human-chosen slug, e.g. CLM-margaret-randolph-birth-01"
+    },
+    "claim_type": {
+      "type": "string",
+      "enum": ["birth", "parent_child", "death", "marriage", "burial", "migration", "military", "occupation"]
+    },
+    "subject_cid": {
+      "type": "string",
+      "description": "The individual this claim is about. Either a real, already-registered Canonical_ID, or a PENDING:<key> placeholder (lowercase, hyphenated) shared by every claim proposing the same not-yet-registered person.",
+      "pattern": "^([A-Z]{2,4}-(c\\d{3,4}|\\d{3,4})-[A-Za-z0-9.]+-[A-Z]{2}|PENDING:[a-z0-9][a-z0-9-]*)$"
+    },
+    "object_cid": {
+      "type": "string",
+      "description": "A second individual this claim relates the subject to — required for parent_child (the parent) and marriage (the spouse). Must be a real registered CID, or the literal 'UNK'.",
+      "pattern": "^([A-Z]{2,4}-(c\\d{3,4}|\\d{3,4})-[A-Za-z0-9.]+-[A-Z]{2}|UNK)$"
+    },
+    "assertion": {
+      "type": "object",
+      "description": "Shape depends on claim_type. birth: {full_legal_name, namespace, birth_year, birth_state, birth_date?, birth_place?}. parent_child: {relationship: father|mother}. death: {death_date?, death_place?}. marriage: {marriage_date?, marriage_place?}. burial: {burial_place}. migration: {year?, location}. military: {unit?, rank?, service_dates?}. occupation: {description}."
+    },
+    "source": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["evidence_level", "description"],
+      "properties": {
+        "evidence_level": {"type": "string", "enum": ["A", "B", "C", "D"]},
+        "description": {"type": "string"},
+        "source_id": {"type": "string", "description": "A Source_Registry/ Source_ID if one exists, else 'UNK'."}
+      }
+    },
+    "submitted_by": {
+      "type": "string",
+      "description": "Submitter identity (e.g. GitHub username). Two claims from the same submitted_by never corroborate each other — see §4.1 of the design doc."
+    },
+    "submitted_at": {"type": "string", "format": "date"},
+    "status": {
+      "type": "string",
+      "enum": ["pending", "confirmed", "contested", "rejected"],
+      "description": "Submitter always sets this to 'pending'. It is advisory only in Phase 2 — tools/cid_registrar.py recomputes confirmation from evidence_level and submitter independence fresh on every run rather than trusting a stored value."
+    }
+  }
+}
