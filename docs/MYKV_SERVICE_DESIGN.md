@@ -340,7 +340,7 @@ above.
 | 1 | ✅ CID/reference validator (`tools/validate_ledger.py`) wired into `.github/workflows/test-readiness.yml`; `CID_Index_Master.md` becomes generated | No |
 | 2 | ✅ Claim schema (`schemas/claim.schema.json`) + `Claims/` directory + CID Registrar (`tools/cid_registrar.py`, mints a CID only from a confirmed Claim) | No |
 | 3 | ✅ Corroboration engine (§4) generates Confirmed Records from Claims (`tools/cid_registrar.py`, extended beyond Phase 2's minimal stub); `tools/export_kv_claim.py` for MyKV v0 (§5.2) | No |
-| 4 | Multi-family namespaces (already gestured at in `README.md`'s "Multi-family namespace expansion" and `docs/assets/Start_Your_Own_Family_Hub.pdf`) — anyone forks or registers a new `<NS>` | No |
+| 4 | ✅ Multi-family namespaces — `NAMESPACES.md` registry + `tools/validate_ledger.py`/`tools/cid_registrar.py` enforcement, `docs/start.md` walkthrough | No |
 | 5 | API layer + hosted read service, so records are browsable without cloning the repo | No (but needs a hosting decision) |
 | 6 | Governed live MyKV sync via Interlock/InTr (§5.3) | **Yes** — StegVerse-Labs shared runtime |
 
@@ -361,11 +361,16 @@ same way MyKV treats its own unbuilt capabilities.
    set up via `docs/index.md`'s Jekyll front matter) is enough for a
    read-only browsable ledger; anything with a write API needs a real
    hosting decision.
-3. **Multi-family namespace governance (Phase 4):** does a new family's
-   `<NS>` live in this same repo, or does each family fork and this repo
-   becomes the schema/spec reference? `README.md` already says "Enable
-   duplication across other families," which points at fork-based, but
-   that's worth confirming before Phase 4.
+3. ~~**Multi-family namespace governance (Phase 4)**~~ — **resolved**:
+   fork-based, per `README.md`'s "Enable duplication across other
+   families." A new family forks this repo and registers its own
+   namespace(s) in `NAMESPACES.md` (§ below); this repo can also grow a
+   *second* namespace directly (documented in `NAMESPACES.md` itself) if
+   a connected family's line is being researched here rather than
+   separately. Either way, `tools/validate_ledger.py` and
+   `tools/cid_registrar.py` both fail closed on any CID/claim using a
+   namespace that repo's `NAMESPACES.md` doesn't list — see
+   `test_namespaces.py`.
 
 Feedback on any of the above changes the phase order; nothing after Phase 0
 should start until this doc is agreed on.

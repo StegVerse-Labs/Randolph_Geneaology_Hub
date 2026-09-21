@@ -39,7 +39,12 @@ RND-1909-001-OR – Jack Lindley Randolph
 
 - No CID may be reused.
 - No CID may be altered once assigned.
-- All new individuals must be registered here first.
+- Every CID's namespace must be registered in [`NAMESPACES.md`](NAMESPACES.md) —
+  `tools/validate_ledger.py` fails closed on any that isn't.
+- A new individual is registered by adding an `Individuals/*.md` file (or a
+  confirmed `Claims/` submission — see `Claims/README.md`) and running
+  `python3 tools/validate_ledger.py --write`, not by editing the list above
+  directly.
 
 ---
 

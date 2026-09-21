@@ -10,6 +10,13 @@ import cid_registrar  # noqa: E402
 import validate_ledger  # noqa: E402
 
 
+def write_namespaces_file(tmp_root, *namespaces):
+    path = tmp_root / "NAMESPACES.md"
+    rows = "\n".join(f"| `{ns}` | Test |" for ns in namespaces)
+    path.write_text(f"# Registered Namespaces\n\n| Namespace | Family |\n|---|---|\n{rows}\n", encoding="utf-8")
+    return path
+
+
 def make_claim(**kwargs):
     base = {
         "claim_id": "CLM-test",
@@ -93,10 +100,12 @@ def test_end_to_end_mint_and_write(monkeypatch):
             "# Index\n\n<!-- BEGIN GENERATED: tools/validate_ledger.py -->\n<!-- END GENERATED -->\n",
             encoding="utf-8",
         )
+        namespaces_file = write_namespaces_file(tmp_root, "RND")
 
         monkeypatch.setattr(validate_ledger, "ROOT", tmp_root)
         monkeypatch.setattr(validate_ledger, "INDIVIDUALS", individuals)
         monkeypatch.setattr(validate_ledger, "INDEX_FILE", index_file)
+        monkeypatch.setattr(validate_ledger, "NAMESPACES_FILE", namespaces_file)
         monkeypatch.setattr(cid_registrar, "ROOT", tmp_root)
         monkeypatch.setattr(cid_registrar, "INDIVIDUALS", individuals)
         monkeypatch.setattr(cid_registrar, "CLAIMS_DIR", claims_dir)
@@ -164,10 +173,12 @@ def test_full_pipeline_via_main_multiple_claim_types(monkeypatch, capsys):
             "# Index\n\n<!-- BEGIN GENERATED: tools/validate_ledger.py -->\n<!-- END GENERATED -->\n",
             encoding="utf-8",
         )
+        namespaces_file = write_namespaces_file(tmp_root, "RND")
 
         monkeypatch.setattr(validate_ledger, "ROOT", tmp_root)
         monkeypatch.setattr(validate_ledger, "INDIVIDUALS", individuals)
         monkeypatch.setattr(validate_ledger, "INDEX_FILE", index_file)
+        monkeypatch.setattr(validate_ledger, "NAMESPACES_FILE", namespaces_file)
         monkeypatch.setattr(cid_registrar, "ROOT", tmp_root)
         monkeypatch.setattr(cid_registrar, "INDIVIDUALS", individuals)
         monkeypatch.setattr(cid_registrar, "CLAIMS_DIR", claims_dir)
@@ -237,10 +248,12 @@ def test_hand_authored_record_never_overwritten(monkeypatch):
             "<!-- END GENERATED -->\n",
             encoding="utf-8",
         )
+        namespaces_file = write_namespaces_file(tmp_root, "RND")
 
         monkeypatch.setattr(validate_ledger, "ROOT", tmp_root)
         monkeypatch.setattr(validate_ledger, "INDIVIDUALS", individuals)
         monkeypatch.setattr(validate_ledger, "INDEX_FILE", index_file)
+        monkeypatch.setattr(validate_ledger, "NAMESPACES_FILE", namespaces_file)
         monkeypatch.setattr(cid_registrar, "ROOT", tmp_root)
         monkeypatch.setattr(cid_registrar, "INDIVIDUALS", individuals)
         monkeypatch.setattr(cid_registrar, "CLAIMS_DIR", claims_dir)

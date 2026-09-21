@@ -88,11 +88,14 @@ This prevents:
     Randolph_Genealogy_Hub/
     │
     ├── Individuals/
+    ├── Claims/
     ├── Research/
     ├── Source_Registry/
     ├── Lineage_Trees/
     ├── profiles/
     ├── docs/
+    ├── tools/
+    ├── NAMESPACES.md
     └── Standards/
         ├── Evidence_Grading.md
         ├── Schema_v1.md
@@ -178,7 +181,8 @@ Planned modules:
 -   Cemetery cluster mapping\
 -   Migration visualization\
 -   GEDCOM export module\
--   Multi-family namespace expansion
+-   ✅ Multi-family namespace expansion — see [`NAMESPACES.md`](NAMESPACES.md)
+    and [`docs/start.md`](docs/start.md) for forking this hub for your own family
 
 See [`docs/MYKV_SERVICE_DESIGN.md`](docs/MYKV_SERVICE_DESIGN.md) for the
 draft design turning this into an open, corroboration-confirmed service

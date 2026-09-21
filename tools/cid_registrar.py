@@ -122,6 +122,24 @@ def check_reference_integrity(claims, known_cids):
     return errors
 
 
+def check_birth_namespaces(claims, registered_namespaces):
+    """A birth claim proposing a namespace nobody registered in
+    NAMESPACES.md should fail loudly now, not leave the claim silently
+    stuck pending forever because mintable_for_pending quietly declines
+    to mint into it."""
+    errors = []
+    for c in claims:
+        if c["claim_type"] != "birth":
+            continue
+        ns = c["assertion"].get("namespace")
+        if ns and ns not in registered_namespaces:
+            errors.append(
+                f"{c['_file'].relative_to(ROOT)}: proposes namespace '{ns}', which isn't "
+                f"registered in NAMESPACES.md — register it there first or use a registered namespace"
+            )
+    return errors
+
+
 def cluster_key(claim):
     return json.dumps(claim["assertion"], sort_keys=True)
 
@@ -457,6 +475,11 @@ def main():
     claims, claim_errors = load_claims()
     errors.extend(claim_errors)
     errors.extend(check_reference_integrity(claims, known_cids))
+
+    registered_namespaces, namespace_errors = validate_ledger.load_registered_namespaces()
+    errors.extend(namespace_errors)
+    if registered_namespaces is not None:
+        errors.extend(check_birth_namespaces(claims, registered_namespaces))
 
     if errors:
         print("CID REGISTRAR FAILED")
