@@ -295,14 +295,17 @@ KnowledgeVault ←InTr→ Device/StegOS Node ←InTr→ External Network ←InTr
 Endpoint" summary:
 
 - **`Node` is not a boundary.** It never appears in the module's
-  `BOUNDARIES` tuple. The StegVerse Node is a device-resident
-  runtime/identity (implemented, per `Site`, as a same-origin service
-  worker) that operates *within* the `DEVICE_SYSTEM` boundary — not a
-  separate hop after it.
+  `BOUNDARIES` tuple, so it is not a hop in the canonical chain.
+  Precisely *what* the StegVerse Node is, and which runtime surface owns
+  it, is deliberately left open here: the canonical transport module
+  doesn't define it, and repository placement of Node-facing client code
+  is not evidence of runtime ownership. Treat "Node" as out of scope for
+  this boundary chain until a canonical source defines it.
 - **`STEGOS_ECOSYSTEM` is a real, separate boundary**, distinct from
   `DEVICE_SYSTEM`, sitting between it and `EXTERNAL_SYSTEM`. The
-  README's "Device/StegOS Node" phrase collapses two different things —
-  a boundary and a within-boundary identity — into one label.
+  README's "Device/StegOS Node" phrase collapses two different things
+  into one label — a canonical boundary, and something the canonical
+  module never names at all.
 
 Every hop is independently gated: `build_transport_intent()` fixes
 `authority_transfer: false`, `transport_grants_execution_authority: false`,
@@ -495,3 +498,33 @@ protection a public write endpoint needs that a PR-only workflow doesn't.
 
 Feedback on any of the above changes the phase order; nothing after Phase 0
 should start until this doc is agreed on.
+
+---
+
+## 10. Status: paused pending KV
+
+As of this writing, further work on this design is **intentionally
+paused** until KV (MyKV / KnowledgeVault) settles as the storage medium
+for StegVerse services generally. Phases 0–4 are built and merged;
+Phase 5 is planned but unbuilt; Phase 6 was already gated on external
+infrastructure.
+
+The reason to pause here rather than push on: **one foundational
+assumption in this document may invert.** §5.2 and §8.3 both currently
+treat the repository as the system of record — "the repo *is* the
+database" — with MyKV as optional convenience for staging private
+research. If KV becomes the canonical storage medium for all StegVerse
+services including this one, that relationship flips: this hub would
+become a KV-backed service rather than a git-backed ledger that
+optionally ingests KV-exported claims.
+
+What survives either way: the Claim schema, the corroboration
+thresholds (§4), the CID registrar, and namespace enforcement are all
+storage-agnostic rules. Only the *persistence layer* — Markdown records
+in a git repo, validated by CI — is git-specific. A future KV-backed
+version would re-home where records live without rewriting how a fact
+becomes confirmed.
+
+Treat §5.2's "nothing about this requires MyKV" and §8.3's "the repo is
+the database" as accurate for what is built today, but provisional with
+respect to that pending decision.
