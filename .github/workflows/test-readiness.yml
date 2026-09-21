@@ -60,3 +60,9 @@ jobs:
           PY
       - name: Validate CID ledger
         run: python3 tools/validate_ledger.py
+      - name: Validate claims and CID minting
+        run: python3 tools/cid_registrar.py
+      - name: Install test dependencies
+        run: pip install pytest
+      - name: Run test suite
+        run: python3 -m pytest tests/ -v
