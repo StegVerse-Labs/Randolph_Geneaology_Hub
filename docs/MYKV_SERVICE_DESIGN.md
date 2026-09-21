@@ -175,6 +175,22 @@ records via independent corroboration is a natural fit for that kind of
 destination, scoped specifically to genealogical claims rather than
 arbitrary historical corpora.
 
+"MyKV" is actually two repositories, and this design should keep that split
+straight:
+
+- **[`StegVerse-Labs/continuity-vault-kit`](https://github.com/StegVerse-Labs/continuity-vault-kit)**
+  defines the KV *content model*: the file-based vault structure, the
+  relationship/instance model (KV #1/KV #2/KV #n), the bounded-projection
+  and historical-corpus-import contracts referenced throughout this
+  document.
+- **[`StegVerse-Labs/Site`](https://github.com/StegVerse-Labs/Site)** is the
+  web front end (`my-kv.html` et al.) that a person actually installs and
+  clicks through — it implements the browser-side installation-status
+  bridge and the Interlock/InTr entrypoint launcher that a service like
+  this one would need to integrate with for anything beyond v0's manual
+  export (§5.2). §5.3 below is grounded in that implementation, not just
+  the abstract contract.
+
 ### 5.2 v0 — file-only, no hosted anything (build this first)
 
 Matches MyKV's own stated baseline ("file-based. No account, hosted
@@ -217,6 +233,39 @@ Interlock/InTr runtime, which lives outside this repository. What this repo
 - Independently validate before minting anything — never treat a custody
   request as already-accepted custody, per the custody-request schema in
   `continuity-vault-kit`'s `schemas/kv-historical-custody-request.schema.json`.
+
+**Concrete contract, as actually implemented in `StegVerse-Labs/Site`.**
+`assets/kv-entrypoint-intr-launcher.js` is the real thing a future
+integration would consume, not a hypothetical one:
+
+- It reads installation status from `window.StegVerseKVInstallationStatusBridge.getInstallationStatus()`
+  and validates the result is schema `stegverse.kv.installation-status-projection/v1`,
+  `state` one of `KV_INSTALLATION_VERIFIED` / `KV_INSTALLATION_NOT_VERIFIED`,
+  `credential_material_present === false`, `provider_operation_authorized === false`,
+  and `authority_effect === "NONE"` — failing closed (throwing
+  `FAIL_CLOSED: ...`) on any mismatch, exactly the posture this design
+  asks for in §5.2 and §6.
+- On success it round-trips the validated `state` into the destination URL
+  (`my-kv.html?entry=intr&kv_state=<state>`) purely as a launch artifact —
+  `my-kv.html` itself never reads those query parameters back out; it
+  re-derives its own status independently via a fresh
+  `getInstallationStatus()` call on load. A URL carrying
+  `kv_state=KV_INSTALLATION_VERIFIED` is therefore real evidence that
+  *some* browser session got a verified projection at some point, but is
+  not itself proof of current state — the same "import receipt != truth
+  certification" posture this document already commits to, now with a
+  concrete example. **Any future integration on this repo's side must
+  apply the identical rule: never treat a `kv_state` query parameter, or
+  any other artifact copied out of a MyKV URL, as sufficient evidence by
+  itself — always require the live, schema-validated projection (or an
+  admitted InTr receipt, per above), never a copied link.**
+- The genuinely reusable piece for this design is the projection schema
+  itself (`stegverse.kv.installation-status-projection/v1`) and its
+  fail-closed validation shape. A future `tools/verify_kv_projection.py`
+  in this repo (Phase 6) should mirror `validateProjection()` from
+  `kv-entrypoint-intr-launcher.js` field-for-field rather than inventing
+  its own projection shape, so a genealogy-hub-side consumer and the
+  Site-side producer stay compatible.
 
 ---
 
