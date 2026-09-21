@@ -208,8 +208,8 @@ records via independent corroboration is a natural fit for that kind of
 destination, scoped specifically to genealogical claims rather than
 arbitrary historical corpora.
 
-"MyKV" is actually two repositories, and this design should keep that split
-straight:
+"MyKV" is actually three repositories, and this design should keep that
+split straight:
 
 - **[`StegVerse-Labs/continuity-vault-kit`](https://github.com/StegVerse-Labs/continuity-vault-kit)**
   defines the KV *content model*: the file-based vault structure, the
@@ -223,6 +223,14 @@ straight:
   this one would need to integrate with for anything beyond v0's manual
   export (§5.2). §5.3 below is grounded in that implementation, not just
   the abstract contract.
+- **[`StegVerse-Labs/StegCore`](https://github.com/StegVerse-Labs/StegCore)**
+  holds the canonical Interlock/InTr transport contract itself
+  (`contracts/stegos_universal_intr_snapshot/stegos/universal_intr_transport.py`)
+  — the boundary list, hop-receipt schema, and validation rules that both
+  other repos build on; `Site`'s own docs say they mirror this module and
+  "do not define an alternate role vocabulary." §5.3 now cites this
+  module directly for the boundary topology, rather than the simplified
+  summary in `continuity-vault-kit`'s README.
 
 ### 5.2 v0 — file-only, no hosted anything (build this first)
 
@@ -270,6 +278,46 @@ Interlock/InTr runtime, which lives outside this repository. What this repo
 - Independently validate before minting anything — never treat a custody
   request as already-accepted custody, per the custody-request schema in
   `continuity-vault-kit`'s `schemas/kv-historical-custody-request.schema.json`.
+
+**The canonical boundary chain, per `StegVerse-Labs/StegCore`.** `Site`'s
+own docs state they mirror `stegos/universal_intr_transport.py` and "do
+not define an alternate role vocabulary" — that module (mirrored in
+StegCore's `contracts/stegos_universal_intr_snapshot/stegos/universal_intr_transport.py`)
+is the actual source of truth for the topology, not the simplified
+diagram in `continuity-vault-kit`'s README (§2):
+
+```
+SKAP_VAULT <-> KV <-> DEVICE_SYSTEM <-> STEGOS_ECOSYSTEM <-> EXTERNAL_SYSTEM
+```
+
+Two corrections this makes to the README's own "SKAP Vault ←InTr→
+KnowledgeVault ←InTr→ Device/StegOS Node ←InTr→ External Network ←InTr→
+Endpoint" summary:
+
+- **`Node` is not a boundary.** It never appears in the module's
+  `BOUNDARIES` tuple. The StegVerse Node is a device-resident
+  runtime/identity (implemented, per `Site`, as a same-origin service
+  worker) that operates *within* the `DEVICE_SYSTEM` boundary — not a
+  separate hop after it.
+- **`STEGOS_ECOSYSTEM` is a real, separate boundary**, distinct from
+  `DEVICE_SYSTEM`, sitting between it and `EXTERNAL_SYSTEM`. The
+  README's "Device/StegOS Node" phrase collapses two different things —
+  a boundary and a within-boundary identity — into one label.
+
+Every hop is independently gated: `build_transport_intent()` fixes
+`authority_transfer: false`, `transport_grants_execution_authority: false`,
+and `credential_authority: "TV/TVC"` on every intent, and
+`validate_receipt_chain()` hash-chains each hop's receipt to the previous
+one, failing closed on any gap — the concrete mechanism behind "no
+transitive trust between hops" this design has assumed since §2.
+
+Ephemerality is a transport property of *any* hop, not something
+specific to StegOS or Node: the module docstring states *"a receiver may
+be materialized event-ephemerally or the exact packet may be durably
+queued. An always-on application receiver and a second user device are
+never prerequisites to transport initiation."* A future integration
+should not assume any particular boundary is always live — the protocol
+is explicitly built around that not being guaranteed.
 
 **Concrete contract, as actually implemented in `StegVerse-Labs/Site`.**
 `assets/kv-entrypoint-intr-launcher.js` is the real thing a future
