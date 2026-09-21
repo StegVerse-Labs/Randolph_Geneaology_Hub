@@ -208,8 +208,8 @@ records via independent corroboration is a natural fit for that kind of
 destination, scoped specifically to genealogical claims rather than
 arbitrary historical corpora.
 
-"MyKV" is actually two repositories, and this design should keep that split
-straight:
+"MyKV" is actually three repositories, and this design should keep that
+split straight:
 
 - **[`StegVerse-Labs/continuity-vault-kit`](https://github.com/StegVerse-Labs/continuity-vault-kit)**
   defines the KV *content model*: the file-based vault structure, the
@@ -223,6 +223,14 @@ straight:
   this one would need to integrate with for anything beyond v0's manual
   export (§5.2). §5.3 below is grounded in that implementation, not just
   the abstract contract.
+- **[`StegVerse-Labs/StegCore`](https://github.com/StegVerse-Labs/StegCore)**
+  holds the canonical Interlock/InTr transport contract itself
+  (`contracts/stegos_universal_intr_snapshot/stegos/universal_intr_transport.py`)
+  — the boundary list, hop-receipt schema, and validation rules that both
+  other repos build on; `Site`'s own docs say they mirror this module and
+  "do not define an alternate role vocabulary." §5.3 now cites this
+  module directly for the boundary topology, rather than the simplified
+  summary in `continuity-vault-kit`'s README.
 
 ### 5.2 v0 — file-only, no hosted anything (build this first)
 
@@ -270,6 +278,49 @@ Interlock/InTr runtime, which lives outside this repository. What this repo
 - Independently validate before minting anything — never treat a custody
   request as already-accepted custody, per the custody-request schema in
   `continuity-vault-kit`'s `schemas/kv-historical-custody-request.schema.json`.
+
+**The canonical boundary chain, per `StegVerse-Labs/StegCore`.** `Site`'s
+own docs state they mirror `stegos/universal_intr_transport.py` and "do
+not define an alternate role vocabulary" — that module (mirrored in
+StegCore's `contracts/stegos_universal_intr_snapshot/stegos/universal_intr_transport.py`)
+is the actual source of truth for the topology, not the simplified
+diagram in `continuity-vault-kit`'s README (§2):
+
+```
+SKAP_VAULT <-> KV <-> DEVICE_SYSTEM <-> STEGOS_ECOSYSTEM <-> EXTERNAL_SYSTEM
+```
+
+Two corrections this makes to the README's own "SKAP Vault ←InTr→
+KnowledgeVault ←InTr→ Device/StegOS Node ←InTr→ External Network ←InTr→
+Endpoint" summary:
+
+- **`Node` is not a boundary.** It never appears in the module's
+  `BOUNDARIES` tuple, so it is not a hop in the canonical chain.
+  Precisely *what* the StegVerse Node is, and which runtime surface owns
+  it, is deliberately left open here: the canonical transport module
+  doesn't define it, and repository placement of Node-facing client code
+  is not evidence of runtime ownership. Treat "Node" as out of scope for
+  this boundary chain until a canonical source defines it.
+- **`STEGOS_ECOSYSTEM` is a real, separate boundary**, distinct from
+  `DEVICE_SYSTEM`, sitting between it and `EXTERNAL_SYSTEM`. The
+  README's "Device/StegOS Node" phrase collapses two different things
+  into one label — a canonical boundary, and something the canonical
+  module never names at all.
+
+Every hop is independently gated: `build_transport_intent()` fixes
+`authority_transfer: false`, `transport_grants_execution_authority: false`,
+and `credential_authority: "TV/TVC"` on every intent, and
+`validate_receipt_chain()` hash-chains each hop's receipt to the previous
+one, failing closed on any gap — the concrete mechanism behind "no
+transitive trust between hops" this design has assumed since §2.
+
+Ephemerality is a transport property of *any* hop, not something
+specific to StegOS or Node: the module docstring states *"a receiver may
+be materialized event-ephemerally or the exact packet may be durably
+queued. An always-on application receiver and a second user device are
+never prerequisites to transport initiation."* A future integration
+should not assume any particular boundary is always live — the protocol
+is explicitly built around that not being guaranteed.
 
 **Concrete contract, as actually implemented in `StegVerse-Labs/Site`.**
 `assets/kv-entrypoint-intr-launcher.js` is the real thing a future
@@ -341,7 +392,7 @@ above.
 | 2 | ✅ Claim schema (`schemas/claim.schema.json`) + `Claims/` directory + CID Registrar (`tools/cid_registrar.py`, mints a CID only from a confirmed Claim) | No |
 | 3 | ✅ Corroboration engine (§4) generates Confirmed Records from Claims (`tools/cid_registrar.py`, extended beyond Phase 2's minimal stub); `tools/export_kv_claim.py` for MyKV v0 (§5.2) | No |
 | 4 | ✅ Multi-family namespaces — `NAMESPACES.md` registry + `tools/validate_ledger.py`/`tools/cid_registrar.py` enforcement, `docs/start.md` walkthrough | No |
-| 5 | API layer + hosted read service, so records are browsable without cloning the repo | No (but needs a hosting decision) |
+| 5 | 📋 Planned (§8), not built. Read-only GitHub Pages site: no blocker. Write API: design settled, hosting platform still open | Read-only: No. Write API: needs a hosting decision |
 | 6 | Governed live MyKV sync via Interlock/InTr (§5.3) | **Yes** — StegVerse-Labs shared runtime |
 
 Phases 0–5 are buildable entirely inside this repo and don't require
@@ -351,20 +402,93 @@ same way MyKV treats its own unbuilt capabilities.
 
 ---
 
-## 8. Open questions
+## 8. Phase 5 plan: hosted read service
+
+Planned, not yet built. This section exists to answer *how*, so that
+whenever building it starts, it starts from a decision rather than a
+blank page.
+
+### 8.1 Split the read side from the write side
+
+These have very different risk profiles and should not be planned as one
+lump:
+
+- **Read-only browsing** — a visitor sees confirmed records, sourced
+  claims, and contested facts without cloning the repo. This needs no new
+  infrastructure, no credentials, and no hosting decision: **GitHub
+  Pages**, which `docs/index.md`'s existing Jekyll front matter already
+  targets. This is the part of Phase 5 that's ready to build whenever
+  it's prioritized.
+- **Write access over HTTP** (submitting a Claim without a GitHub
+  account/PR) — this is the part that genuinely needs a hosting decision
+  (platform, who holds any credentials, cost, abuse handling) and stays
+  explicitly deferred; §8.3 below records the recommended shape for
+  *when* that decision gets made, so it doesn't have to be re-derived
+  from scratch later.
+
+### 8.2 Read-only site (buildable now, no decision needed)
+
+Render straight from the same files the validator already trusts —
+never a separate database that could drift from `Individuals/`/`Claims/`:
+
+- **Generator**: Jekyll (GitHub Pages' native engine) reading
+  `Individuals/*.md`, `CID_Index_Master.md`, `Claims/*.json`,
+  `Source_Registry/`, and `Research/` as Jekyll *data files*/collections,
+  rather than a custom static-site generator — avoids adding a build
+  dependency GitHub Pages doesn't already run for free.
+- **Pages**: a namespace index (one per `NAMESPACES.md` entry), a person
+  page per confirmed CID (rendering the same sections `Schema_v1.md`
+  requires, plus a "claims behind this record" panel for claim-managed
+  entries), a pending/contested Claims dashboard (surfaces exactly the
+  `contested` and not-yet-confirmed clusters `tools/cid_registrar.py`
+  already computes), and a search/browse index across all namespaces.
+- **Freshness**: a GitHub Actions step (alongside the existing
+  `test-readiness.yml` checks) rebuilds and deploys the Pages site on
+  every push to `main` — no separate deploy credential beyond what
+  GitHub Pages' own `actions/deploy-pages` action already uses.
+- **Privacy**: the generator must apply `Standards/Living_Persons_Privacy_Protocol.md`
+  at render time, not just trust that `Individuals/*.md` already
+  redacted everything — a defense-in-depth check, since a public static
+  site is a bigger exposure surface than a repo a contributor has to
+  clone first.
+
+### 8.3 Write API (deferred — recorded for whenever it's decided)
+
+The recommended shape, so the eventual hosting decision only has to pick
+a platform, not redesign the approach: **the API's only job is to open a
+PR**, authenticated as a bot/service account, adding one `Claims/*.json`
+file per submission — it does not reimplement corroboration, minting, or
+generation logic. That stays exactly what it is today:
+`tools/cid_registrar.py`, running in CI on the resulting PR, unchanged.
+This avoids needing a database (the repo *is* the database), sidesteps
+reimplementing the fail-closed validation this design leans on so
+heavily, and means a submission is inherently reviewable before it lands
+on `main`, matching the "reversible, transparent" commitments in
+`README.md` and `docs/ethics.md`.
+
+What's still genuinely open, and needs a person to decide rather than
+tooling to derive: which hosting platform runs that thin API layer, who
+holds the bot account's PR-creation credential, and what abuse/rate-limit
+protection a public write endpoint needs that a PR-only workflow doesn't.
+
+---
+
+## 9. Open questions
 
 1. **Submitter identity for independence checks (§4.1):** GitHub account
    is enough for v0. Do we want an explicit link to a MyKV instance ID
    later, so corroboration can distinguish "two different people" from
    "one person's two KV instances" more rigorously?
-2. **Hosting for Phase 5's read API/site** — GitHub Pages (already partly
-   set up via `docs/index.md`'s Jekyll front matter) is enough for a
-   read-only browsable ledger; anything with a write API needs a real
-   hosting decision.
+2. ~~**Hosting for Phase 5's read API/site**~~ — **narrowed, not fully
+   resolved**: see §8. The read-only side needs no decision (GitHub
+   Pages). The write-API side's *design* is settled (a thin PR-opening
+   layer in front of the unchanged Claims/CI pipeline, §8.3) but its
+   *hosting platform* is still genuinely open and deferred until someone
+   decides to build it.
 3. ~~**Multi-family namespace governance (Phase 4)**~~ — **resolved**:
    fork-based, per `README.md`'s "Enable duplication across other
    families." A new family forks this repo and registers its own
-   namespace(s) in `NAMESPACES.md` (§ below); this repo can also grow a
+   namespace(s) in `NAMESPACES.md`; this repo can also grow a
    *second* namespace directly (documented in `NAMESPACES.md` itself) if
    a connected family's line is being researched here rather than
    separately. Either way, `tools/validate_ledger.py` and
@@ -374,3 +498,33 @@ same way MyKV treats its own unbuilt capabilities.
 
 Feedback on any of the above changes the phase order; nothing after Phase 0
 should start until this doc is agreed on.
+
+---
+
+## 10. Status: paused pending KV
+
+As of this writing, further work on this design is **intentionally
+paused** until KV (MyKV / KnowledgeVault) settles as the storage medium
+for StegVerse services generally. Phases 0–4 are built and merged;
+Phase 5 is planned but unbuilt; Phase 6 was already gated on external
+infrastructure.
+
+The reason to pause here rather than push on: **one foundational
+assumption in this document may invert.** §5.2 and §8.3 both currently
+treat the repository as the system of record — "the repo *is* the
+database" — with MyKV as optional convenience for staging private
+research. If KV becomes the canonical storage medium for all StegVerse
+services including this one, that relationship flips: this hub would
+become a KV-backed service rather than a git-backed ledger that
+optionally ingests KV-exported claims.
+
+What survives either way: the Claim schema, the corroboration
+thresholds (§4), the CID registrar, and namespace enforcement are all
+storage-agnostic rules. Only the *persistence layer* — Markdown records
+in a git repo, validated by CI — is git-specific. A future KV-backed
+version would re-home where records live without rewriting how a fact
+becomes confirmed.
+
+Treat §5.2's "nothing about this requires MyKV" and §8.3's "the repo is
+the database" as accurate for what is built today, but provisional with
+respect to that pending decision.
