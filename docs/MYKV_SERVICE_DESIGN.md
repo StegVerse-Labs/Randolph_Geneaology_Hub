@@ -295,12 +295,32 @@ KnowledgeVault ←InTr→ Device/StegOS Node ←InTr→ External Network ←InTr
 Endpoint" summary:
 
 - **`Node` is not a boundary.** It never appears in the module's
-  `BOUNDARIES` tuple, so it is not a hop in the canonical chain.
-  Precisely *what* the StegVerse Node is, and which runtime surface owns
-  it, is deliberately left open here: the canonical transport module
-  doesn't define it, and repository placement of Node-facing client code
-  is not evidence of runtime ownership. Treat "Node" as out of scope for
-  this boundary chain until a canonical source defines it.
+  `BOUNDARIES` tuple, so it is not a hop in the canonical chain. The
+  canonical transport module does not define it at all, and repository
+  placement of Node-facing client code is not evidence of runtime
+  ownership.
+
+  What the Node *is* is defined elsewhere, by
+  `StegVerse-Labs/StegOS/docs/STEGOS_NODE_MANIFOLD_MIRROR_HANDOFF.md`
+  (`goal_id: STEGOS-NODE-MANIFOLD-001`) and its successor
+  `docs/STEGOS_HISTORICAL_PHYSICAL_EVIDENCE_RECONCILIATION.md`:
+
+  - **StegOS owns Node.** Site only projects and observes it. The
+    deployed surface lives at `/stegos-node/`, but Site "explicitly does
+    not decide whether the export is a distinct peer" — StegOS does.
+  - A Node is a **browser-resident, service-worker-controlled** identity.
+    Genesis is `UNREGISTERED -> REGISTERED`, producing canonical
+    Receipt #1 with `continuity_parent=GENESIS`.
+  - The **ephemeral StegOS Network Manifold** is the current topology
+    built from each Node's *latest accepted relationship*; historical
+    observations stay reconstructable but are not logically live.
+  - Receipt relationships establish causal order. Wall-clock time is
+    descriptive only.
+
+  This is consistent with, not a contradiction of, the point above: Node
+  is a real governed object that is nonetheless *not* a hop in the
+  `BOUNDARIES` chain. It sits inside `DEVICE_SYSTEM`/`STEGOS_ECOSYSTEM`
+  rather than between them.
 - **`STEGOS_ECOSYSTEM` is a real, separate boundary**, distinct from
   `DEVICE_SYSTEM`, sitting between it and `EXTERNAL_SYSTEM`. The
   README's "Device/StegOS Node" phrase collapses two different things
