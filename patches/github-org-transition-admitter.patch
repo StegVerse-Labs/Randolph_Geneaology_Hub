@@ -1,0 +1,971 @@
+diff --git a/.github/workflows/org-control-plane-validate.yml b/.github/workflows/org-control-plane-validate.yml
+index 09555c35..18078faf 100644
+--- a/.github/workflows/org-control-plane-validate.yml
++++ b/.github/workflows/org-control-plane-validate.yml
+@@ -92,6 +92,15 @@ jobs:
+           after="$(sha256sum control/claims-active.json 2>/dev/null || true)"
+           echo "allocator local before=${before} after=${after}"
+           echo 'Allocator mutations are runner-local validation evidence only; this workflow never commits or pushes them.'
++      - name: Test organization allocator transition admission
++        run: python -m unittest tests.test_org_allocator_transition_admission -v
++      - name: Report unrecorded canonical allocator transitions
++        run: |
++          python scripts/admit_org_allocator_transition_receipt.py \
++            evidence/global-runtime-evidence-closure-001/original/stegverse-org-allocator-TASK-2026-0011-G7-v2.json \
++            || echo 'ORG_TRANSITION_ADMISSION_DENIED_AS_EXPECTED_UNTIL_MISSING_RECEIPTS_SUPPLIED'
++          echo 'Reporting only; this workflow holds no write authority and admits nothing.'
++
+       - name: Validate check-in reconciliation
+         run: python scripts/reconcile_checkins.py
+       - name: Validate JSON and JSONL syntax
+diff --git a/scripts/admit_org_allocator_transition_receipt.py b/scripts/admit_org_allocator_transition_receipt.py
+new file mode 100644
+index 00000000..9ff34f25
+--- /dev/null
++++ b/scripts/admit_org_allocator_transition_receipt.py
+@@ -0,0 +1,613 @@
++#!/usr/bin/env python3
++"""Admit a device/resident organization allocator transition receipt at org level.
++
++The canonical allocator (``scripts/allocate_claims.py`` and its portable
++projection ``org_allocator/portable_allocator.js``) already computes claim
++state transitions on three surfaces:
++
++* the tokenless CI runner, whose mutations are discarded by design
++  (``org-control-plane-validate.yml`` runs the allocator as validation
++  evidence and never commits),
++* a resident host runtime root via
++  ``scripts/consume_org_claim_allocator_request.py``, which persists into
++  *that* runtime and not into this repository,
++* the current user's device, which persists into a hash-chained node
++  journal.
++
++Nothing carried any of those transitions back into this repository. The
++consequence is observable: ``control/claims-active.json`` sits at generation
++2 with zero claims, so ``heartbeat_runtime.org_assertions`` issues nothing,
++so all 26 ``organization_assertions_issued`` events in
++``events/heartbeat-runtime.jsonl`` carry ``issued_count: 0``, so no
++organization event and no Master Records record was ever produced.
++
++This module is the missing recorder. It does not allocate and it cannot
++create claim authority: it only admits a receipt the canonical allocator
++already signed, and it fails closed on anything it cannot verify.
++
++Denial is a first-class result. A receipt whose generation runs ahead of the
++recorded generation is refused with the exact list of transitions that must
++be supplied first, because inventing the intervening receipts would
++manufacture organization state that no allocator ever produced.
++"""
++
++from __future__ import annotations
++
++import argparse
++import hashlib
++import json
++import re
++from datetime import datetime, timezone
++from pathlib import Path
++from typing import Any, Iterable, Mapping
++
++ROOT = Path(__file__).resolve().parents[1]
++
++RECEIPT_SCHEMA = "stegverse.org-allocator-portable-receipt/v1"
++OBSERVATION_SCHEMA = "stegverse.org-claim-grant-observation/v1"
++ADMISSION_SCHEMA = "stegverse.org-allocator-transition-admission/v1"
++CUSTODY_SCHEMA = "stegverse.org_allocation_custody.v1"
++
++CLAIMS_REL = Path("control/claims-active.json")
++QUEUE_REL = Path("control/queue.json")
++EVENTS_REL = Path("events/org-events.jsonl")
++TASKS_REL = Path("tasks")
++CUSTODY_REL = Path("workloads/master-records/orchestration/custody/org-allocation")
++
++#: Assertions the canonical allocator stamps on every receipt. A receipt that
++#: disagrees with any of them is not a canonical allocator receipt.
++REQUIRED_ASSERTIONS: Mapping[str, Any] = {
++    "canonical_authority_owner": "StegVerse-Labs/.github organization allocator",
++    "credential_authority": "TV/TVC",
++    "github_token_runtime_authority": "NONE",
++    "heartbeat_grants_claim_authority": False,
++    "request_grants_claim_authority": False,
++    "stegos_grants_claim_authority": False,
++    "network_source_fetch_performed": False,
++    "requires_other_machine": False,
++    "second_user_operated_device_required": False,
++}
++
++#: Field-name substrings that must not appear in an admitted receipt.
++SECRET_TOKENS = ("password", "secret", "private_key", "access_key", "api_key", "cookie")
++
++#: Exact names that carry a substring above but are governance assertions.
++#: Same policy shape as continuity-vault-kit ``runtime/secret_field_policy``:
++#: an allow-listed name is admitted only when its value also looks like an
++#: assertion, so the allow-list cannot become a smuggling channel.
++ASSERTION_FIELDS = frozenset(
++    {
++        "credential_authority",
++        "contains_secret_material",
++        "secret_plaintext_present",
++        "github_token_required",
++        "github_token_runtime_authority",
++    }
++)
++MAX_ASSERTION_STRING = 200
++_BLOB = re.compile(r"[A-Za-z0-9+/=_-]{32,}")
++
++
++def canonical(value: Any) -> bytes:
++    """Byte-identical to ``canonicalize`` in org_allocator/portable_allocator.js."""
++    return json.dumps(
++        value, sort_keys=True, separators=(",", ":"), ensure_ascii=False, allow_nan=False
++    ).encode("utf-8")
++
++
++def sha256_hex(value: Any) -> str:
++    return hashlib.sha256(canonical(value)).hexdigest()
++
++
++def load_json(path: Path) -> Any:
++    return json.loads(path.read_text(encoding="utf-8"))
++
++
++def dump_json(path: Path, value: Any) -> None:
++    path.parent.mkdir(parents=True, exist_ok=True)
++    path.write_text(json.dumps(value, indent=2, sort_keys=True) + "\n", encoding="utf-8")
++
++
++def value_is_assertion_like(value: Any) -> bool:
++    if isinstance(value, bool) or value is None:
++        return True
++    if isinstance(value, int):
++        return True
++    if isinstance(value, str):
++        return len(value) <= MAX_ASSERTION_STRING and not _BLOB.search(value)
++    return False
++
++
++def find_forbidden_field(value: Any, path: str = "receipt") -> str | None:
++    """Return the dotted path of the first secret-bearing field, or None."""
++    if isinstance(value, Mapping):
++        for key, child in value.items():
++            name = str(key)
++            allowed = name in ASSERTION_FIELDS and value_is_assertion_like(child)
++            if not allowed and any(token in name.lower() for token in SECRET_TOKENS):
++                return f"{path}.{name}"
++            nested = find_forbidden_field(child, f"{path}.{name}")
++            if nested is not None:
++                return nested
++    elif isinstance(value, (list, tuple)):
++        for index, child in enumerate(value):
++            nested = find_forbidden_field(child, f"{path}[{index}]")
++            if nested is not None:
++                return nested
++    return None
++
++
++# --------------------------------------------------------------------------
++# unwrapping
++# --------------------------------------------------------------------------
++
++
++def extract(document: Any) -> dict[str, Any]:
++    """Locate the allocator receipt inside any of the shapes it is carried in.
++
++    Receipts reach this repository wrapped: as a bare receipt, inside a node
++    journal entry, or inside a recovered-evidence envelope. Provenance found
++    alongside the receipt is retained, because it is what ties an admitted
++    organization transition back to the device that produced it.
++    """
++    if not isinstance(document, Mapping):
++        raise ValueError("receipt document must be a JSON object")
++
++    receipt: Any = None
++    observation: Any = None
++    provenance: dict[str, Any] = {}
++
++    def walk(node: Any) -> None:
++        nonlocal receipt, observation
++        if isinstance(node, Mapping):
++            schema = node.get("schema")
++            if schema == RECEIPT_SCHEMA and receipt is None:
++                receipt = node
++            elif schema == OBSERVATION_SCHEMA and observation is None:
++                observation = node
++            for key in (
++                "node_id",
++                "device_continuity_id",
++                "execution_surface",
++                "execution_trigger",
++                "allocator_release",
++                "executed_at",
++                "entry_sha256",
++                "sequence",
++                "previous_entry_sha256",
++            ):
++                if key in node and key not in provenance and not isinstance(node[key], (dict, list)):
++                    provenance[key] = node[key]
++            for child in node.values():
++                walk(child)
++        elif isinstance(node, list):
++            for child in node:
++                walk(child)
++
++    walk(document)
++    if receipt is None:
++        raise ValueError(f"no {RECEIPT_SCHEMA} found in document")
++    return {"receipt": dict(receipt), "observation": observation, "provenance": provenance}
++
++
++# --------------------------------------------------------------------------
++# verification
++# --------------------------------------------------------------------------
++
++
++def deny(reason: str, **detail: Any) -> dict[str, Any]:
++    return {"decision": "DENY", "deny_reason": reason, **detail}
++
++
++def recorded_generation(root: Path) -> int:
++    claims = load_json(root / CLAIMS_REL)
++    generation = claims.get("generation")
++    if not isinstance(generation, int) or isinstance(generation, bool) or generation < 0:
++        raise ValueError("recorded claim registry generation invalid")
++    return generation
++
++
++def admitted_receipt_digests(root: Path) -> set[str]:
++    path = root / EVENTS_REL
++    if not path.is_file():
++        return set()
++    digests: set[str] = set()
++    for line in path.read_text(encoding="utf-8").splitlines():
++        line = line.strip()
++        if not line:
++            continue
++        try:
++            event = json.loads(line)
++        except ValueError:
++            continue
++        digest = event.get("receipt_sha256")
++        if isinstance(digest, str):
++            digests.add(digest)
++    return digests
++
++
++def evaluate(root: Path, document: Any) -> dict[str, Any]:
++    """Decide whether one receipt may be recorded as organization state.
++
++    Every refusal names the transition that is missing or wrong rather than
++    reporting a bare failure, so a denied receipt says what to fetch next.
++    """
++    parts = extract(document)
++    receipt = parts["receipt"]
++    observation = parts["observation"]
++
++    if receipt.get("state") != "ALLOCATION_COMPLETE":
++        return deny("RECEIPT_STATE_NOT_ALLOCATION_COMPLETE", observed_state=receipt.get("state"))
++
++    supplied = receipt.get("receipt_sha256")
++    if not isinstance(supplied, str) or not supplied.startswith("sha256:"):
++        return deny("RECEIPT_DIGEST_MISSING")
++    body = {key: value for key, value in receipt.items() if key != "receipt_sha256"}
++    recomputed = "sha256:" + sha256_hex(body)
++    if recomputed != supplied:
++        return deny("RECEIPT_DIGEST_MISMATCH", recomputed=recomputed, supplied=supplied)
++
++    for field, expected in REQUIRED_ASSERTIONS.items():
++        if receipt.get(field) != expected:
++            return deny(
++                "GOVERNANCE_ASSERTION_MISMATCH",
++                field=field,
++                expected=expected,
++                observed=receipt.get(field),
++            )
++
++    forbidden = find_forbidden_field(receipt)
++    if forbidden is not None:
++        return deny("SECRET_BEARING_FIELD", field_path=forbidden)
++
++    selected = receipt.get("selected")
++    if not isinstance(selected, str) or not selected:
++        return deny("RECEIPT_SELECTED_NO_TASK")
++
++    granted = receipt.get("granted_claims")
++    if not isinstance(granted, list) or not granted:
++        return deny("RECEIPT_GRANTED_CLAIMS_EMPTY")
++
++    generation = receipt.get("claim_registry_generation")
++    if not isinstance(generation, int) or isinstance(generation, bool) or generation < 1:
++        return deny("RECEIPT_GENERATION_INVALID", observed=generation)
++
++    fences: list[int] = []
++    for claim in granted:
++        if not isinstance(claim, Mapping):
++            return deny("RECEIPT_GRANTED_CLAIM_NOT_OBJECT")
++        if claim.get("task_id") != selected:
++            return deny("RECEIPT_GRANTED_CLAIM_TASK_MISMATCH", observed=claim.get("task_id"))
++        fence = (claim.get("lease") or {}).get("fencing_token")
++        if not isinstance(fence, int) or isinstance(fence, bool) or fence < 1:
++            return deny("RECEIPT_FENCING_TOKEN_INVALID", observed=fence)
++        if fence != generation:
++            return deny(
++                "RECEIPT_FENCE_GENERATION_DISAGREE", fencing_token=fence, generation=generation
++            )
++        fences.append(fence)
++
++    if observation is not None:
++        snapshot = {
++            "task_id": selected,
++            "claim_registry_generation": generation,
++            "claims": granted,
++        }
++        if observation.get("claim_snapshot_sha256") != sha256_hex(snapshot):
++            return deny("CLAIM_SNAPSHOT_DIGEST_MISMATCH")
++
++    task_path = root / TASKS_REL / f"{selected}.json"
++    if not task_path.is_file():
++        return deny("TASK_NOT_IN_CATALOG", task_id=selected)
++
++    if supplied in admitted_receipt_digests(root):
++        return {
++            "decision": "ALREADY_ADMITTED",
++            "task_id": selected,
++            "claim_registry_generation": generation,
++            "receipt_sha256": supplied,
++        }
++
++    current = recorded_generation(root)
++    if generation <= current:
++        return deny(
++            "GENERATION_NOT_MONOTONIC",
++            recorded_generation=current,
++            receipt_generation=generation,
++        )
++    if generation > current + 1:
++        missing = list(range(current + 1, generation))
++        return deny(
++            "GENERATION_GAP",
++            recorded_generation=current,
++            receipt_generation=generation,
++            missing_generations=missing,
++            remedy=(
++                "supply the canonical allocator receipts for generations "
++                + ",".join(str(value) for value in missing)
++                + " before this one; they exist only on the surface that produced them"
++            ),
++        )
++
++    return {
++        "decision": "ADMIT",
++        "task_id": selected,
++        "claim_registry_generation": generation,
++        "recorded_generation": current,
++        "receipt_sha256": supplied,
++        "fencing_tokens": sorted(fences),
++        "granted_claims": granted,
++        "queued": receipt.get("queued") or [],
++        "blocked_missing_dependency_declaration": receipt.get(
++            "blocked_missing_dependency_declaration"
++        )
++        or [],
++        "execution_surface": receipt.get("execution_surface"),
++        "provenance": parts["provenance"],
++        "observation_present": observation is not None,
++    }
++
++
++# --------------------------------------------------------------------------
++# recording
++# --------------------------------------------------------------------------
++
++
++def dependency_surfaces(claims: Iterable[Mapping[str, Any]]) -> list[str]:
++    found: set[str] = set()
++    for claim in claims:
++        for value in ((claim.get("scope") or {}).get("dependency_surfaces") or []):
++            text = str(value).strip()
++            if text:
++                found.add(text)
++    return sorted(found)
++
++
++def occurred_at(decision: Mapping[str, Any]) -> str:
++    stamp = decision.get("provenance", {}).get("executed_at")
++    if isinstance(stamp, str) and stamp:
++        return stamp
++    return datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
++
++
++def custody_record(decision: Mapping[str, Any], *, source_commit: str) -> dict[str, Any]:
++    """Project an admitted transition into the Master Records custody shape.
++
++    Section layout follows the one custody record this repository already
++    holds (``stegverse.worker_lifecycle_custody.v2``): source, claim,
++    validation, custody, boundaries, record_hash.
++    """
++    task_id = decision["task_id"]
++    generation = decision["claim_registry_generation"]
++    granted = decision["granted_claims"]
++    provenance = decision.get("provenance", {})
++    ref = f"StegVerse-Labs/.github@{source_commit}:"
++    record = {
++        "schema": CUSTODY_SCHEMA,
++        "custody_id": f"ORG-ALLOCATION-{task_id}-G{generation}-001",
++        "source": {
++            "task_id": task_id,
++            "repository": "StegVerse-Labs/.github",
++            "source_commit": source_commit,
++            "allocator_ref": ref + "scripts/allocate_claims.py",
++            "portable_allocator_ref": ref + "org_allocator/portable_allocator.js",
++            "task_ref": ref + f"tasks/{task_id}.json",
++            "claims_ref": ref + CLAIMS_REL.as_posix(),
++            "event_log_ref": ref + EVENTS_REL.as_posix(),
++        },
++        "transition": {
++            "transition_id": "ORG_CLAIMS_GRANTED",
++            "claim_registry_generation": generation,
++            "predecessor_generation": decision["recorded_generation"],
++            "receipt_sha256": decision["receipt_sha256"],
++            "execution_surface": decision.get("execution_surface"),
++            "queued_after_transition": decision.get("queued") or [],
++            "blocked_missing_dependency_declaration": decision.get(
++                "blocked_missing_dependency_declaration"
++            )
++            or [],
++        },
++        "claim": {
++            "task_id": task_id,
++            "fencing_tokens": decision["fencing_tokens"],
++            "repositories": sorted(
++                {
++                    str((claim.get("repository") or {}).get("full_name"))
++                    for claim in granted
++                    if (claim.get("repository") or {}).get("full_name")
++                }
++            ),
++            "dependency_surfaces": dependency_surfaces(granted),
++            "released": False,
++        },
++        "producing_surface": {
++            "node_id": provenance.get("node_id"),
++            "device_continuity_id": provenance.get("device_continuity_id"),
++            "execution_trigger": provenance.get("execution_trigger"),
++            "allocator_release": provenance.get("allocator_release"),
++            "journal_sequence": provenance.get("sequence"),
++            "journal_entry_sha256": provenance.get("entry_sha256"),
++            "executed_at": provenance.get("executed_at"),
++        },
++        "validation": {
++            "status": "PASS",
++            "validation_type": "CANONICAL_ALLOCATOR_RECEIPT_DIGEST_AND_GENERATION_CONTINUITY",
++            "receipt_digest_recomputed": True,
++            "claim_snapshot_digest_recomputed": bool(decision.get("observation_present")),
++            "generation_contiguous_with_recorded_state": True,
++            "runtime_execution_claimed": False,
++        },
++        "custody": {
++            "status": "ACCEPTED_FOR_CUSTODY",
++            "reconstruction_status": "PASS",
++            "authority_effect": "NONE",
++        },
++        "boundaries": [
++            "admission records a transition the canonical allocator already produced",
++            "admission does not allocate and does not grant claim authority",
++            "admission does not assert the claimed task executed or completed",
++            "a generation gap is denied rather than reconstructed",
++            "GitHub token is not a production runtime requirement",
++        ],
++        "github_token_required": False,
++        "authority_effect": "NONE",
++    }
++    record["record_hash"] = sha256_hex(record)
++    return record
++
++
++def apply_admission(root: Path, decision: Mapping[str, Any], *, source_commit: str) -> dict[str, Any]:
++    """Record an admitted transition at org level and in Master Records."""
++    task_id = decision["task_id"]
++    generation = decision["claim_registry_generation"]
++    granted = [dict(claim) for claim in decision["granted_claims"]]
++    stamp = occurred_at(decision)
++
++    claims_state = load_json(root / CLAIMS_REL)
++    active = list(claims_state.get("claims") or [])
++    held = {
++        (claim.get("task_id"), (claim.get("repository") or {}).get("full_name"))
++        for claim in active
++        if isinstance(claim, Mapping)
++    }
++    for claim in granted:
++        key = (claim.get("task_id"), (claim.get("repository") or {}).get("full_name"))
++        if key not in held:
++            active.append(claim)
++            held.add(key)
++    claims_state["claims"] = active
++    claims_state["generation"] = generation
++    claims_state["updated_at"] = stamp
++    dump_json(root / CLAIMS_REL, claims_state)
++
++    task_path = root / TASKS_REL / f"{task_id}.json"
++    task = load_json(task_path)
++    task["status"] = "active"
++    dump_json(task_path, task)
++
++    record = custody_record(decision, source_commit=source_commit)
++    custody_path = root / CUSTODY_REL / f"{record['custody_id']}.json"
++    dump_json(custody_path, record)
++
++    event = {
++        "event_id": f"ORG-EVENT-{generation + 1:06d}",
++        "event_type": "claims_granted",
++        "generation": generation,
++        "occurred_at": stamp,
++        "actor": "admitted_canonical_allocator_receipt",
++        "task_id": task_id,
++        "resources": [
++            (claim.get("repository") or {}).get("full_name")
++            for claim in granted
++            if (claim.get("repository") or {}).get("full_name")
++        ],
++        "dependency_surfaces": dependency_surfaces(granted),
++        "receipt_sha256": decision["receipt_sha256"],
++        "execution_surface": decision.get("execution_surface"),
++        "master_records_ref": custody_path.relative_to(root).as_posix(),
++        "master_records_record_hash": record["record_hash"],
++        "admission_grants_claim_authority": False,
++        "allocator_remains_claim_authority": True,
++        "github_token_runtime_authority": "NONE",
++    }
++    events_path = root / EVENTS_REL
++    events_path.parent.mkdir(parents=True, exist_ok=True)
++    with events_path.open("a", encoding="utf-8") as stream:
++        stream.write(json.dumps(event, sort_keys=True) + "\n")
++
++    return {
++        "schema": ADMISSION_SCHEMA,
++        "state": "ADMITTED",
++        "task_id": task_id,
++        "claim_registry_generation": generation,
++        "receipt_sha256": decision["receipt_sha256"],
++        "org_event_id": event["event_id"],
++        "master_records_ref": event["master_records_ref"],
++        "master_records_record_hash": record["record_hash"],
++        "admission_grants_claim_authority": False,
++        "allocator_remains_claim_authority": True,
++        "authority_effect": "NONE_RECORDING_ONLY",
++    }
++
++
++def admit_all(
++    root: Path, documents: list[Any], *, apply: bool, source_commit: str
++) -> dict[str, Any]:
++    """Evaluate receipts in generation order, stopping at the first denial.
++
++    Ordering by generation lets a recovered journal be replayed in one call,
++    and stopping on denial keeps a gap from being stepped over silently.
++    """
++
++    def generation_of(document: Any) -> int:
++        try:
++            return int(extract(document)["receipt"].get("claim_registry_generation") or 0)
++        except Exception:
++            return 0
++
++    results: list[dict[str, Any]] = []
++    state = "NO_RECEIPTS"
++    for document in sorted(documents, key=generation_of):
++        decision = evaluate(root, document)
++        if decision["decision"] == "ADMIT":
++            if apply:
++                results.append(apply_admission(root, decision, source_commit=source_commit))
++            else:
++                results.append({**decision, "state": "ADMISSIBLE_DRY_RUN"})
++            state = "ADMISSION_COMPLETE"
++            continue
++        if decision["decision"] == "ALREADY_ADMITTED":
++            results.append({**decision, "state": "ALREADY_ADMITTED"})
++            continue
++        results.append({**decision, "state": "DENIED"})
++        state = "DENIED"
++        break
++    return {
++        "schema": ADMISSION_SCHEMA,
++        "state": state,
++        "applied": bool(apply),
++        "recorded_generation": recorded_generation(root),
++        "results": results,
++        "admission_grants_claim_authority": False,
++        "allocator_remains_claim_authority": True,
++        "credential_authority": "TV/TVC",
++        "github_token_runtime_authority": "NONE",
++        "authority_effect": "NONE_RECORDING_ONLY",
++    }
++
++
++def main() -> int:
++    parser = argparse.ArgumentParser(
++        description="Admit canonical organization allocator transition receipts."
++    )
++    parser.add_argument("receipts", nargs="+", help="receipt, journal entry or evidence JSON files")
++    parser.add_argument("--root", type=Path, default=ROOT)
++    parser.add_argument(
++        "--apply",
++        action="store_true",
++        help="record admitted transitions; without it the run is a decision preview",
++    )
++    parser.add_argument(
++        "--source-commit",
++        default="UNPINNED",
++        help="commit the admitted record cites as its source revision",
++    )
++    args = parser.parse_args()
++
++    documents = [load_json(Path(path)) for path in args.receipts]
++    try:
++        result = admit_all(
++            args.root.resolve(),
++            documents,
++            apply=args.apply,
++            source_commit=args.source_commit,
++        )
++    except Exception as exc:  # fail closed, never partially report success
++        print(json.dumps({"schema": ADMISSION_SCHEMA, "state": "BLOCKED", "reason": str(exc)}, sort_keys=True))
++        return 2
++    print(json.dumps(result, indent=2, sort_keys=True))
++    return 0 if result["state"] in {"ADMISSION_COMPLETE", "ALREADY_ADMITTED", "NO_RECEIPTS"} else 1
++
++
++if __name__ == "__main__":
++    raise SystemExit(main())
+diff --git a/tests/test_org_allocator_transition_admission.py b/tests/test_org_allocator_transition_admission.py
+new file mode 100644
+index 00000000..25e58502
+--- /dev/null
++++ b/tests/test_org_allocator_transition_admission.py
+@@ -0,0 +1,326 @@
++"""Organization-level admission of canonical allocator transition receipts.
++
++The lane these tests cover is the one that was missing: a transition the
++canonical allocator already computed on some surface becomes recorded
++organization state, and only then does the heartbeat have anything to assert
++about.
++"""
++
++from __future__ import annotations
++
++import json
++import shutil
++import sys
++import tempfile
++import unittest
++from pathlib import Path
++
++ROOT = Path(__file__).resolve().parents[1]
++if str(ROOT) not in sys.path:
++    sys.path.insert(0, str(ROOT))
++
++import importlib.util
++
++_SPEC = importlib.util.spec_from_file_location(
++    "admit_org_allocator_transition_receipt",
++    ROOT / "scripts" / "admit_org_allocator_transition_receipt.py",
++)
++admitter = importlib.util.module_from_spec(_SPEC)
++sys.modules[_SPEC.name] = admitter
++_SPEC.loader.exec_module(admitter)
++
++from heartbeat_runtime.org_assertions import issue_claim_assertions
++
++DEVICE_EVIDENCE = (
++    ROOT
++    / "evidence"
++    / "global-runtime-evidence-closure-001"
++    / "original"
++    / "stegverse-org-allocator-TASK-2026-0011-G7-v2.json"
++)
++
++
++def seal(body: dict) -> dict:
++    """Stamp a receipt the way org_allocator/portable_allocator.js does."""
++    receipt = {key: value for key, value in body.items() if key != "receipt_sha256"}
++    receipt["receipt_sha256"] = "sha256:" + admitter.sha256_hex(receipt)
++    return receipt
++
++
++def synth_receipt(task_id: str, generation: int, *, repository: str = "StegVerse-Labs/Site") -> dict:
++    claim = {
++        "task_id": task_id,
++        "mode": "scoped_exclusive",
++        "preemptible": True,
++        "repository": {
++            "host": "github.com",
++            "owner": repository.split("/")[0],
++            "name": repository.split("/")[1],
++            "full_name": repository,
++            "default_branch": "main",
++        },
++        "scope": {
++            "paths": ["docs/EXAMPLE.md"],
++            "contracts": [],
++            "release_surfaces": [],
++            "capabilities": [],
++            "workflows": [],
++            "dependency_surfaces": ["site:example-surface"],
++        },
++        "lease": {
++            "expires_at": "2026-09-23T00:00:00Z",
++            "heartbeat_due_at": "2026-09-22T08:00:00Z",
++            "fencing_token": generation,
++            "service_class": "low_contention",
++        },
++    }
++    return seal(
++        {
++            "schema": admitter.RECEIPT_SCHEMA,
++            "state": "ALLOCATION_COMPLETE",
++            "selected": task_id,
++            "queued": [task_id],
++            "blocked_missing_dependency_declaration": [],
++            "claim_registry_generation": generation,
++            "granted_claims": [claim],
++            "execution_surface": "CURRENT_USER_IPHONE",
++            "canonical_authority_owner": "StegVerse-Labs/.github organization allocator",
++            "credential_authority": "TV/TVC",
++            "heartbeat_grants_claim_authority": False,
++            "request_grants_claim_authority": False,
++            "stegos_grants_claim_authority": False,
++            "github_token_runtime_authority": "NONE",
++            "network_source_fetch_performed": False,
++            "requires_other_machine": False,
++            "second_user_operated_device_required": False,
++            "authority_effect": "CLAIM_AUTHORITY_ONLY_WHEN_SELECTED_BY_CANONICAL_ALLOCATOR",
++        }
++    )
++
++
++class SandboxRoot(unittest.TestCase):
++    """A disposable organization control plane at the repository's own state."""
++
++    def setUp(self) -> None:
++        self.tmp = Path(tempfile.mkdtemp())
++        self.addCleanup(shutil.rmtree, self.tmp, True)
++        for relative in ("control", "tasks", "events"):
++            shutil.copytree(ROOT / relative, self.tmp / relative)
++        self.task_id = "TASK-2026-0007"
++
++    def events(self) -> list[dict]:
++        text = (self.tmp / admitter.EVENTS_REL).read_text(encoding="utf-8")
++        return [json.loads(line) for line in text.splitlines() if line.strip()]
++
++    def claims(self) -> dict:
++        return json.loads((self.tmp / admitter.CLAIMS_REL).read_text(encoding="utf-8"))
++
++
++class DeviceReceiptIntegrity(unittest.TestCase):
++    def test_recorded_device_receipt_digests_recompute(self) -> None:
++        """The receipt the user's device produced verifies outside the device."""
++        document = json.loads(DEVICE_EVIDENCE.read_text(encoding="utf-8"))
++        parts = admitter.extract(document)
++        receipt = parts["receipt"]
++        body = {k: v for k, v in receipt.items() if k != "receipt_sha256"}
++        self.assertEqual("sha256:" + admitter.sha256_hex(body), receipt["receipt_sha256"])
++
++        observation = parts["observation"]
++        snapshot = {
++            "task_id": observation["task_id"],
++            "claim_registry_generation": observation["claim_registry_generation"],
++            "claims": observation["claims"],
++        }
++        self.assertEqual(
++            admitter.sha256_hex(snapshot), observation["claim_snapshot_sha256"]
++        )
++
++    def test_device_provenance_is_carried_through(self) -> None:
++        document = json.loads(DEVICE_EVIDENCE.read_text(encoding="utf-8"))
++        provenance = admitter.extract(document)["provenance"]
++        self.assertEqual(provenance["execution_surface"], "CURRENT_USER_IPHONE")
++        self.assertTrue(str(provenance["node_id"]).startswith("stegnode-web-"))
++        self.assertTrue(str(provenance["device_continuity_id"]).startswith("stegdevice-"))
++        self.assertEqual(provenance["sequence"], 67)
++
++
++class GenerationContinuity(SandboxRoot):
++    def test_recorded_state_is_behind_the_device(self) -> None:
++        """The condition this module exists to detect."""
++        self.assertEqual(admitter.recorded_generation(self.tmp), 2)
++        self.assertEqual(self.claims()["claims"], [])
++
++    def test_generation_gap_is_denied_and_names_what_is_missing(self) -> None:
++        document = json.loads(DEVICE_EVIDENCE.read_text(encoding="utf-8"))
++        decision = admitter.evaluate(self.tmp, document)
++        self.assertEqual(decision["decision"], "DENY")
++        self.assertEqual(decision["deny_reason"], "GENERATION_GAP")
++        self.assertEqual(decision["missing_generations"], [3, 4, 5, 6])
++
++    def test_stale_generation_is_denied(self) -> None:
++        decision = admitter.evaluate(self.tmp, synth_receipt(self.task_id, 2))
++        self.assertEqual(decision["deny_reason"], "GENERATION_NOT_MONOTONIC")
++
++    def test_replay_stops_at_the_first_gap(self) -> None:
++        """A gap is never stepped over, even with a later receipt in hand."""
++        result = admitter.admit_all(
++            self.tmp,
++            [synth_receipt(self.task_id, 5), synth_receipt(self.task_id, 3)],
++            apply=True,
++            source_commit="TEST",
++        )
++        self.assertEqual(result["state"], "DENIED")
++        self.assertEqual([entry["state"] for entry in result["results"]], ["ADMITTED", "DENIED"])
++        self.assertEqual(result["results"][1]["missing_generations"], [4])
++
++
++class Admission(SandboxRoot):
++    def test_contiguous_receipt_is_recorded_at_org_and_master_records(self) -> None:
++        before = len(self.events())
++        result = admitter.admit_all(
++            self.tmp, [synth_receipt(self.task_id, 3)], apply=True, source_commit="TESTCOMMIT"
++        )
++        self.assertEqual(result["state"], "ADMISSION_COMPLETE")
++
++        events = self.events()
++        self.assertEqual(len(events), before + 1)
++        event = events[-1]
++        self.assertEqual(event["event_type"], "claims_granted")
++        self.assertEqual(event["generation"], 3)
++        self.assertEqual(event["task_id"], self.task_id)
++        self.assertIs(event["admission_grants_claim_authority"], False)
++        self.assertIs(event["allocator_remains_claim_authority"], True)
++
++        claims = self.claims()
++        self.assertEqual(claims["generation"], 3)
++        self.assertEqual([claim["task_id"] for claim in claims["claims"]], [self.task_id])
++
++        record_path = self.tmp / event["master_records_ref"]
++        self.assertTrue(record_path.is_file())
++        record = json.loads(record_path.read_text(encoding="utf-8"))
++        self.assertEqual(record["schema"], admitter.CUSTODY_SCHEMA)
++        self.assertEqual(record["transition"]["transition_id"], "ORG_CLAIMS_GRANTED")
++        self.assertEqual(record["validation"]["status"], "PASS")
++        self.assertIs(record["validation"]["runtime_execution_claimed"], False)
++        self.assertEqual(record["authority_effect"], "NONE")
++
++        body = {k: v for k, v in record.items() if k != "record_hash"}
++        self.assertEqual(admitter.sha256_hex(body), record["record_hash"])
++        self.assertEqual(event["master_records_record_hash"], record["record_hash"])
++
++        task = json.loads((self.tmp / "tasks" / f"{self.task_id}.json").read_text(encoding="utf-8"))
++        self.assertEqual(task["status"], "active")
++
++    def test_admission_is_idempotent(self) -> None:
++        receipt = synth_receipt(self.task_id, 3)
++        admitter.admit_all(self.tmp, [receipt], apply=True, source_commit="TEST")
++        after_first = len(self.events())
++        second = admitter.admit_all(self.tmp, [receipt], apply=True, source_commit="TEST")
++        self.assertEqual(second["results"][0]["state"], "ALREADY_ADMITTED")
++        self.assertEqual(len(self.events()), after_first)
++
++    def test_dry_run_records_nothing(self) -> None:
++        before = (self.tmp / admitter.EVENTS_REL).read_bytes()
++        result = admitter.admit_all(
++            self.tmp, [synth_receipt(self.task_id, 3)], apply=False, source_commit="TEST"
++        )
++        self.assertEqual(result["results"][0]["state"], "ADMISSIBLE_DRY_RUN")
++        self.assertEqual((self.tmp / admitter.EVENTS_REL).read_bytes(), before)
++        self.assertEqual(self.claims()["generation"], 2)
++
++
++class FailClosed(SandboxRoot):
++    def test_tampered_receipt_is_denied(self) -> None:
++        receipt = synth_receipt(self.task_id, 3)
++        receipt["queued"] = ["TASK-FABRICATED"]
++        decision = admitter.evaluate(self.tmp, receipt)
++        self.assertEqual(decision["deny_reason"], "RECEIPT_DIGEST_MISMATCH")
++
++    def test_governance_assertion_violation_is_denied_even_when_resealed(self) -> None:
++        body = synth_receipt(self.task_id, 3)
++        body["github_token_runtime_authority"] = "PRODUCTION"
++        decision = admitter.evaluate(self.tmp, seal(body))
++        self.assertEqual(decision["deny_reason"], "GOVERNANCE_ASSERTION_MISMATCH")
++        self.assertEqual(decision["field"], "github_token_runtime_authority")
++
++    def test_secret_bearing_field_is_denied_even_when_resealed(self) -> None:
++        body = synth_receipt(self.task_id, 3)
++        body["granted_claims"][0]["client_secret"] = "hunter2"
++        decision = admitter.evaluate(self.tmp, seal(body))
++        self.assertEqual(decision["deny_reason"], "SECRET_BEARING_FIELD")
++        self.assertIn("client_secret", decision["field_path"])
++
++    def test_governance_assertion_fields_are_not_mistaken_for_secrets(self) -> None:
++        """The fields that prove no credential is present must not be refused."""
++        decision = admitter.evaluate(self.tmp, synth_receipt(self.task_id, 3))
++        self.assertEqual(decision["decision"], "ADMIT")
++
++    def test_fence_must_agree_with_generation(self) -> None:
++        body = synth_receipt(self.task_id, 3)
++        body["granted_claims"][0]["lease"]["fencing_token"] = 99
++        decision = admitter.evaluate(self.tmp, seal(body))
++        self.assertEqual(decision["deny_reason"], "RECEIPT_FENCE_GENERATION_DISAGREE")
++
++    def test_claim_snapshot_digest_must_match_when_observation_present(self) -> None:
++        receipt = synth_receipt(self.task_id, 3)
++        document = {
++            "wrapper": receipt,
++            "claim_observation": {
++                "schema": admitter.OBSERVATION_SCHEMA,
++                "task_id": self.task_id,
++                "claim_registry_generation": 3,
++                "claims": receipt["granted_claims"],
++                "claim_snapshot_sha256": "0" * 64,
++            },
++        }
++        decision = admitter.evaluate(self.tmp, document)
++        self.assertEqual(decision["deny_reason"], "CLAIM_SNAPSHOT_DIGEST_MISMATCH")
++
++    def test_unknown_task_is_denied(self) -> None:
++        decision = admitter.evaluate(self.tmp, synth_receipt("TASK-DOES-NOT-EXIST", 3))
++        self.assertEqual(decision["deny_reason"], "TASK_NOT_IN_CATALOG")
++
++    def test_receipt_without_a_selection_is_denied(self) -> None:
++        body = synth_receipt(self.task_id, 3)
++        body["selected"] = None
++        self.assertEqual(
++            admitter.evaluate(self.tmp, seal(body))["deny_reason"], "RECEIPT_SELECTED_NO_TASK"
++        )
++
++
++class HeartbeatLaneRestored(SandboxRoot):
++    """Admission is what gives the organization heartbeat something to assert.
++
++    All 26 ``organization_assertions_issued`` events in the repository carry
++    ``issued_count: 0`` because the claim registry is empty. These tests pin
++    that cause and its removal.
++    """
++
++    def setUp(self) -> None:
++        super().setUp()
++        shutil.copytree(ROOT / "heartbeats", self.tmp / "heartbeats", dirs_exist_ok=True)
++
++    def test_no_claims_means_no_assertions(self) -> None:
++        issued = issue_claim_assertions(
++            self.tmp, epoch=30, issued_at="2026-09-22T00:00:00Z", write=False
++        )
++        self.assertEqual(issued, [])
++
++    def test_admission_restores_assertion_issuance(self) -> None:
++        admitter.admit_all(
++            self.tmp, [synth_receipt(self.task_id, 3)], apply=True, source_commit="TEST"
++        )
++        issued = issue_claim_assertions(
++            self.tmp, epoch=30, issued_at="2026-09-22T00:00:00Z", write=True
++        )
++        self.assertEqual(len(issued), 1)
++        assertion = json.loads(
++            (self.tmp / issued[0]).read_text(encoding="utf-8")
++        )
++        self.assertEqual(assertion["claimant_id"], self.task_id)
++        self.assertEqual(assertion["fencing_token"], 3)
++        self.assertEqual(assertion["authority_effect"], "none")
++
++
++if __name__ == "__main__":
++    unittest.main()
