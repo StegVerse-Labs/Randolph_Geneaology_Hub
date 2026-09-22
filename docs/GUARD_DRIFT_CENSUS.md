@@ -111,11 +111,15 @@ site                         487             247   51%
 stegverse-sdk                255              28   11%
 stegfin-governance            97               6    6%
 stegverse-labs/.github       660              31    5%
-tvc                          302               4    1%
+tvc                          303               4    1%
 continuity-vault-kit         140               2    1%
 StegOS                       325               0    0%
-TOTAL                       2271             318   14%
+TOTAL                       2272             318   14%
 ```
+
+TVC's count includes the root `conftest.py` added this session; re-running the
+sweep after that landed is why the total reads 2272 rather than 2271. The
+unreferenced count is unchanged.
 
 A first pass that did not credit bulk runs reported 64%. That number was
 wrong; most repositories do run their trees wholesale. Site is the real
@@ -146,7 +150,7 @@ is a prerequisite for knowing what else is broken.
 
 ```bash
 # guards versus workflow references
-python3 /tmp/sweep2.py
+python3 tools/sweep_guard_references.py
 
 # per-repository suite state
 for r in continuity-vault-kit tvc stegos site stegfin-governance; do
@@ -159,6 +163,15 @@ cd /home/user/site && python3 -m pytest -q --no-header -p no:cacheprovider \
   --ignore=tests/test_my_kv_personal_form_profile_source.py \
   --ignore=tests/test_stegmusic_browser.py
 ```
+
+## A sixth witness, with the subject missing
+
+`SDK_EVALUATOR_RUNTIME_PROOF_BLOCKER.md` records the same shape in its harder
+form. A task gated on an *exact* manifest hash, whose inputs were never written
+down: the assertion has no referent at all rather than a moved one. A stale
+assertion can be re-pointed at the file that now holds the code; an orphan hash
+cannot be re-pointed at anything. Re-run with
+`tools/probe_evaluator_posture_chain.py`.
 
 ## Not claimed
 
