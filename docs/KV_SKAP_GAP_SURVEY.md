@@ -12,6 +12,38 @@ authority, and does not upgrade any handoff state.
 
 ---
 
+## 0. Status since the survey was taken
+
+The survey below is the record of what was found on 2026-09-21. Several
+findings have since been fixed and merged. The original text is kept as
+written — it is the evidence — and this section records what changed, so
+nobody acts on a resolved finding.
+
+| Finding | Was | Now |
+| --- | --- | --- |
+| **B1** Site account observation bridge | unbuilt | **built** — Site#1454 |
+| **B3** Site-side profile propagation | unbuilt | **built** — StegOS#404 + Site#1454 |
+| **B2** TVC `SKAP_ACCOUNT_METADATA_ADMIT` consumer | unbuilt | **still unbuilt** |
+| **C1** `kv_skap_account_transfer` raises on every input | broken | **fixed** — CVK#219 |
+| **C2** `kv_interlock_endpoint` rejects `credential_authority` | broken | **fixed** — CVK#219 |
+| **C3** ten colliding secret scanners | systemic | **shared allow-list added** — CVK#219 |
+| **C4** two unimportable modules | broken | **fixed** — CVK#219 |
+| **C5** `execute_device_kv_skap_roundtrip_event.py` import path | broken | **open** — `.github` |
+| **C6** unrestored `sys.modules` write breaks 46 files | broken | **open** — `.github` |
+
+Suite health moved with it: continuity-vault-kit went from 621 passed / 9
+failed / 2 uncollectable to **701 passed**, and StegOS from 1652 to **1656**.
+
+`StegVerse-Labs/.github` could not be attached to the session that did this
+work — the tooling rejects repository names beginning with `.` — so C5 and C6
+remain open and read-only.
+
+Two things the merged work deliberately did **not** do: it claims no runtime,
+and it does not assert any authentic provider observation or SKAP account
+population. Section 7's step 7 is unchanged and still owner-side.
+
+---
+
 ## 1. Headline
 
 The KV/SKAP surface is **not** mostly-unbuilt. It is mostly **built and
