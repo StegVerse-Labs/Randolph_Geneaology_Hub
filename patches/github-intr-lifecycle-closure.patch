@@ -1,0 +1,426 @@
+diff --git a/tests/test_stegbrowser_intr_lifecycle_closure_wiring.py b/tests/test_stegbrowser_intr_lifecycle_closure_wiring.py
+new file mode 100644
+index 00000000..8417ccbb
+--- /dev/null
++++ b/tests/test_stegbrowser_intr_lifecycle_closure_wiring.py
+@@ -0,0 +1,175 @@
++"""StegBrowser InTr lifecycle closure wiring.
++
++The far end admitted a request, ran a consumer, and stopped at
++MATERIALIZATION_EXECUTION_ATTEMPTED. These tests cover the two changes that
++let the lifecycle actually close: retaining the admitted outbox entry so stage
++one can be reconstructed from stored evidence, and calling the canonical
++closure implementation in continuity-vault-kit.
++"""
++
++from __future__ import annotations
++
++import hashlib
++import importlib.util
++import json
++import sys
++import tempfile
++import unittest
++from pathlib import Path
++
++ROOT = Path(__file__).resolve().parents[1]
++if str(ROOT) not in sys.path:
++    sys.path.insert(0, str(ROOT))
++
++_SPEC = importlib.util.spec_from_file_location(
++    "close_stegbrowser_intr_lifecycle_under_test",
++    ROOT / "workers" / "close_stegbrowser_intr_lifecycle.py",
++)
++worker = importlib.util.module_from_spec(_SPEC)
++sys.modules[_SPEC.name] = worker
++_SPEC.loader.exec_module(worker)
++
++MATERIALIZATION_ID = "MR-STEGBROWSER-CUSTODY-0123456789abcdef01234567"
++
++
++def sha_uri(value: object) -> str:
++    raw = json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode("utf-8")
++    return "sha256:" + hashlib.sha256(raw).hexdigest()
++
++
++def outbox_entry(**overrides: object) -> dict:
++    entry = {
++        "schema": "stegos.node_intr_outbox_entry.v1",
++        "state": "LOCAL_OUTBOX_PENDING_NETWORK_DELIVERY",
++        "materialization_id": MATERIALIZATION_ID,
++        "node_id": "stegnode-web-2d6daa94e496d451d16bd5619bd30a25",
++        "interlock_id": "SV-IL-300325da3411909dfa04678b",
++        "network_delivery_observed": False,
++        "runtime_materialization_observed": False,
++        "receiver_receipt_observed": False,
++        "tvc_receipt_observed": False,
++        "request_grants_execution_authority": False,
++        "claim_or_fence_minted": False,
++        "credential_authority": "TV/TVC",
++        "github_token_runtime_authority": "NONE",
++        "authority_effect": "NONE_LOCAL_CONTINUITY_ONLY",
++    }
++    entry.update(overrides)
++    entry["outbox_entry_hash"] = sha_uri(entry)
++    return entry
++
++
++def kv_source_available() -> bool:
++    try:
++        worker.kv_source_root()
++    except SystemExit:
++        return False
++    return True
++
++
++class LifecycleClosureWiring(unittest.TestCase):
++    def setUp(self) -> None:
++        if not kv_source_available():
++            self.skipTest("continuity-vault-kit source root not present")
++        self.runtime = Path(tempfile.mkdtemp())
++        entry = outbox_entry()
++        self.entry = entry
++        self._write(worker.OUTBOX_DIR_REL, entry)
++        self._write(
++            worker.INGRESS_DIR_REL,
++            {
++                "schema": "stegverse.stegbrowser-intr-materialization-ingress/v1",
++                "state": "INGRESS_ADMITTED",
++                "materialization_id": MATERIALIZATION_ID,
++                "outbox_entry_hash": entry["outbox_entry_hash"],
++                "queue_ref": f"intr-materialization/{MATERIALIZATION_ID}.json",
++                "claim_or_fence_minted": False,
++                "credential_authority": "TV/TVC",
++                "authority_effect": "NONE_INGRESS_ONLY",
++            },
++        )
++        self._write(
++            worker.CONSUMPTION_DIR_REL,
++            {
++                "schema": "stegverse.stegbrowser-intr-materialization-consumption/v1",
++                "state": "MATERIALIZATION_EXECUTION_ATTEMPTED",
++                "materialization_id": MATERIALIZATION_ID,
++                "execution_returncode": 0,
++                "claim_or_fence_minted": False,
++                "credential_authority": "TV/TVC",
++                "authority_effect": "NONE_CONSUMPTION_ONLY",
++            },
++        )
++
++    def _write(self, rel: Path, value: dict) -> Path:
++        path = self.runtime / rel / f"{MATERIALIZATION_ID}.json"
++        path.parent.mkdir(parents=True, exist_ok=True)
++        path.write_text(json.dumps(value, indent=2, sort_keys=True) + "\n", encoding="utf-8")
++        return path
++
++    def close(self) -> dict:
++        return worker.close(self.runtime, MATERIALIZATION_ID, source_commit="TESTCOMMIT")
++
++    def test_lifecycle_records_and_writes_all_three_artifacts(self) -> None:
++        result = self.close()
++        self.assertEqual(result["state"], "LIFECYCLE_RECORDED")
++        for key in ("terminal_receipt_ref", "master_records_ref", "far_end_observation_ref"):
++            self.assertTrue((self.runtime / result[key]).is_file(), key)
++
++    def test_the_flags_nothing_could_previously_set_are_now_answered(self) -> None:
++        result = self.close()
++        self.assertTrue(result["receiver_receipt_observed"])
++        self.assertTrue(result["runtime_materialization_observed"])
++
++    def test_closure_grants_no_authority(self) -> None:
++        result = self.close()
++        self.assertFalse(result["closure_grants_execution_authority"])
++        self.assertFalse(result["claim_or_fence_minted"])
++        self.assertEqual(result["authority_effect"], "NONE_RECORDING_ONLY")
++        self.assertEqual(result["github_token_runtime_authority"], "NONE")
++
++    def test_master_records_custody_record_is_written_under_orchestration(self) -> None:
++        result = self.close()
++        self.assertTrue(
++            result["master_records_ref"].startswith(
++                "workloads/master-records/orchestration/custody/intr-lifecycle/"
++            )
++        )
++        record = json.loads((self.runtime / result["master_records_ref"]).read_text(encoding="utf-8"))
++        self.assertEqual(record["custody"]["status"], "ACCEPTED_FOR_CUSTODY")
++        self.assertEqual(record["record_hash"], result["master_records_record_hash"])
++
++    def test_closure_is_write_once_and_idempotent(self) -> None:
++        first = self.close()
++        second = self.close()
++        self.assertEqual(first["terminal_receipt_id"], second["terminal_receipt_id"])
++
++    def test_tampered_retained_entry_is_refused_naming_the_stage(self) -> None:
++        self._write(worker.OUTBOX_DIR_REL, {**self.entry, "node_id": "stegnode-web-tampered"})
++        result = self.close()
++        self.assertEqual(result["state"], "LIFECYCLE_NOT_CLOSED")
++        self.assertIn("NODE_OUTBOX_ENTRY_WRITTEN", result["reason"])
++        self.assertEqual(result["authority_effect"], "NONE_FAIL_CLOSED")
++
++    def test_missing_stage_evidence_fails_closed(self) -> None:
++        (self.runtime / worker.CONSUMPTION_DIR_REL / f"{MATERIALIZATION_ID}.json").unlink()
++        with self.assertRaises(SystemExit):
++            self.close()
++
++
++class IngressRetainsAdmittedEntry(unittest.TestCase):
++    """Validating a digest and discarding the artifact is why stage one could
++    never be reconstructed."""
++
++    def test_ingress_persists_the_outbox_entry_write_once(self) -> None:
++        source = (ROOT / "workers" / "stegbrowser_intr_materialization_ingress.py").read_text(
++            encoding="utf-8"
++        )
++        self.assertIn("OUTBOX_DIR_REL", source)
++        self.assertIn('"node_outbox_entry": dict(entry)', source)
++        self.assertIn("hil._write_once(outbox_path, outbox_raw)", source)
++        self.assertIn('"outbox_entry_ref": str(outbox_path)', source)
++
++
++if __name__ == "__main__":
++    unittest.main()
+diff --git a/workers/close_stegbrowser_intr_lifecycle.py b/workers/close_stegbrowser_intr_lifecycle.py
+new file mode 100644
+index 00000000..d6316f15
+--- /dev/null
++++ b/workers/close_stegbrowser_intr_lifecycle.py
+@@ -0,0 +1,192 @@
++#!/usr/bin/env python3
++"""Close a StegBrowser InTr lifecycle: write the last receipt of the transition.
++
++The lane already produced two receipts and stopped: ingress admitted the
++request, the consumer reported ``MATERIALIZATION_EXECUTION_ATTEMPTED``.
++Attempted is not recorded, so no Master Records custody receipt existed and no
++reconstruction was ever verified. This worker calls the canonical closure
++implementation in continuity-vault-kit and persists what it returns.
++
++The closure logic is not reimplemented here. It lives in
++``runtime/intr_lifecycle_closure.py`` in continuity-vault-kit and is loaded
++from the current KV source root, the same way the Workspace DEVICE_KV
++extension loads ``runtime/workspace_projection.py``. One implementation, so
++the two InTr clients cannot drift apart.
++
++This worker records. It does not execute, does not allocate, and cannot grant
++execution authority or mint a claim or fence.
++"""
++
++from __future__ import annotations
++
++import argparse
++import importlib.machinery
++import importlib.util
++import json
++import os
++import sys
++from pathlib import Path
++from typing import Any
++
++ROOT = Path(__file__).resolve().parents[1]
++
++OUTBOX_DIR_REL = Path("intr-materialization-outbox")
++INGRESS_DIR_REL = Path("receipts/sovereign-network/stegbrowser-intr-ingress")
++CONSUMPTION_DIR_REL = Path("receipts/sovereign-host/stegbrowser-intr-materialization")
++TERMINAL_DIR_REL = Path("receipts/sovereign-network/stegbrowser-intr-lifecycle")
++OBSERVATION_DIR_REL = Path("receipts/sovereign-network/stegbrowser-intr-observation")
++CUSTODY_DIR_REL = Path("workloads/master-records/orchestration/custody/intr-lifecycle")
++
++KV_SOURCE_ROOT_ENV = "STEGVERSE_KV_SOURCE_ROOT"
++KV_REPO_NAME = "continuity-vault-kit"
++CLOSURE_REL = "runtime/intr_lifecycle_closure.py"
++
++
++def kv_source_root() -> Path:
++    """Resolve the continuity-vault-kit source root, repository convention."""
++    candidates: list[Path] = []
++    if os.environ.get(KV_SOURCE_ROOT_ENV):
++        candidates.append(Path(os.environ[KV_SOURCE_ROOT_ENV]).expanduser())
++    try:
++        roots = json.loads(os.environ.get("STEGVERSE_REPO_ROOTS_JSON", "") or "{}")
++    except Exception:
++        roots = {}
++    if isinstance(roots, dict):
++        for key in (f"StegVerse-Labs/{KV_REPO_NAME}", f"StegVerse-org/{KV_REPO_NAME}", KV_REPO_NAME):
++            value = roots.get(key)
++            if isinstance(value, str) and value.strip():
++                candidates.append(Path(value).expanduser())
++    candidates += [ROOT.parent / KV_REPO_NAME, ROOT / KV_REPO_NAME, ROOT.parent.parent / KV_REPO_NAME]
++    for candidate in candidates:
++        resolved = candidate.resolve()
++        if (resolved / CLOSURE_REL).is_file():
++            return resolved
++    raise SystemExit(
++        "FAIL_CLOSED: continuity-vault-kit source root with "
++        + CLOSURE_REL
++        + " not found; set "
++        + KV_SOURCE_ROOT_ENV
++    )
++
++
++#: Synthetic package name for the loaded KV runtime. The closure module uses
++#: package-relative imports, and this repository has its own ``runtime``
++#: directory, so binding the KV package under a distinct name keeps the two
++#: from colliding on ``sys.modules``.
++KV_RUNTIME_PACKAGE = "stegverse_kv_runtime"
++
++
++def load_closure(source_root: Path):
++    """Import the canonical closure module from the resolved KV source root."""
++    runtime_dir = source_root / "runtime"
++    if not runtime_dir.is_dir():
++        raise SystemExit("FAIL_CLOSED: KV runtime package directory missing")
++
++    package = importlib.util.module_from_spec(
++        importlib.machinery.ModuleSpec(KV_RUNTIME_PACKAGE, None, is_package=True)
++    )
++    package.__path__ = [str(runtime_dir)]
++    sys.modules[KV_RUNTIME_PACKAGE] = package
++
++    module_name = f"{KV_RUNTIME_PACKAGE}.intr_lifecycle_closure"
++    spec = importlib.util.spec_from_file_location(module_name, source_root / CLOSURE_REL)
++    if spec is None or spec.loader is None:
++        raise SystemExit("FAIL_CLOSED: closure module could not be loaded")
++    module = importlib.util.module_from_spec(spec)
++    sys.modules[module_name] = module
++    spec.loader.exec_module(module)
++    return module
++
++
++def load_json(path: Path, stage: str) -> dict[str, Any]:
++    if not path.is_file():
++        raise SystemExit(f"FAIL_CLOSED: {stage} evidence missing: {path}")
++    value = json.loads(path.read_text(encoding="utf-8"))
++    if not isinstance(value, dict):
++        raise SystemExit(f"FAIL_CLOSED: {stage} evidence is not an object: {path}")
++    return value
++
++
++def write_once(path: Path, value: Any) -> Path:
++    """Write, or accept an identical existing artifact. Never overwrite."""
++    raw = json.dumps(value, sort_keys=True, indent=2).encode("utf-8") + b"\n"
++    if path.exists():
++        if path.read_bytes() != raw:
++            raise SystemExit(f"FAIL_CLOSED: write-once collision: {path}")
++        return path
++    path.parent.mkdir(parents=True, exist_ok=True)
++    path.write_bytes(raw)
++    return path
++
++
++def close(runtime_root: Path, materialization_id: str, *, source_commit: str) -> dict[str, Any]:
++    closure = load_closure(kv_source_root())
++    outbox = load_json(runtime_root / OUTBOX_DIR_REL / f"{materialization_id}.json", "node outbox entry")
++    ingress = load_json(runtime_root / INGRESS_DIR_REL / f"{materialization_id}.json", "ingress receipt")
++    materialization = load_json(
++        runtime_root / CONSUMPTION_DIR_REL / f"{materialization_id}.json", "materialization receipt"
++    )
++
++    try:
++        result = closure.close_lifecycle(
++            outbox_entry=outbox,
++            ingress_receipt=ingress,
++            materialization_receipt=materialization,
++            source_commit=source_commit,
++        )
++    except Exception as exc:
++        # A lifecycle that cannot close names the stage that broke it.
++        return {
++            "schema": "stegverse.stegbrowser-intr-lifecycle-closure-attempt/v1",
++            "state": "LIFECYCLE_NOT_CLOSED",
++            "materialization_id": materialization_id,
++            "reason": f"{type(exc).__name__}:{exc}",
++            "authority_effect": "NONE_FAIL_CLOSED",
++        }
++
++    receipt = result["terminal_receipt"]
++    record = result["master_records_custody_record"]
++    observation = result["far_end_observation"]
++
++    terminal_path = write_once(runtime_root / TERMINAL_DIR_REL / f"{materialization_id}.json", receipt)
++    custody_path = write_once(runtime_root / CUSTODY_DIR_REL / f"{record['custody_id']}.json", record)
++    observation_path = write_once(
++        runtime_root / OBSERVATION_DIR_REL / f"{materialization_id}.json", observation
++    )
++
++    return {
++        "schema": "stegverse.stegbrowser-intr-lifecycle-closure-attempt/v1",
++        "state": "LIFECYCLE_RECORDED",
++        "materialization_id": materialization_id,
++        "terminal_receipt_id": receipt["manifest_receipt_id"],
++        "terminal_receipt_ref": str(terminal_path.relative_to(runtime_root)),
++        "master_records_ref": str(custody_path.relative_to(runtime_root)),
++        "master_records_record_hash": record["record_hash"],
++        "far_end_observation_ref": str(observation_path.relative_to(runtime_root)),
++        "receiver_receipt_observed": observation["receiver_receipt_observed"],
++        "runtime_materialization_observed": observation["runtime_materialization_observed"],
++        "closure_grants_execution_authority": False,
++        "claim_or_fence_minted": False,
++        "credential_authority": "TV/TVC",
++        "github_token_runtime_authority": "NONE",
++        "authority_effect": "NONE_RECORDING_ONLY",
++    }
++
++
++def main() -> int:
++    parser = argparse.ArgumentParser(description="Close a StegBrowser InTr lifecycle.")
++    parser.add_argument("--runtime-root", type=Path, required=True)
++    parser.add_argument("--materialization-id", required=True)
++    parser.add_argument("--source-commit", default="UNPINNED")
++    args = parser.parse_args()
++    result = close(
++        args.runtime_root.expanduser().resolve(),
++        args.materialization_id,
++        source_commit=args.source_commit,
++    )
++    print(json.dumps(result, indent=2, sort_keys=True))
++    return 0 if result["state"] == "LIFECYCLE_RECORDED" else 1
++
++
++if __name__ == "__main__":
++    raise SystemExit(main())
+diff --git a/workers/stegbrowser_intr_materialization_ingress.py b/workers/stegbrowser_intr_materialization_ingress.py
+index 00ef1a56..10c992c8 100644
+--- a/workers/stegbrowser_intr_materialization_ingress.py
++++ b/workers/stegbrowser_intr_materialization_ingress.py
+@@ -25,6 +25,10 @@ RECEIPT_SCHEMA = "stegverse.stegbrowser-intr-materialization-ingress/v1"
+ RECEIPT_DIR = Path("receipts/sovereign-network/stegbrowser-intr-ingress")
+ LATEST_REL = Path("receipts/sovereign-network/stegbrowser-intr-ingress.latest.json")
+ BINDING_DIR_REL = Path("intr-payloads/stegbrowser-manifest-invocation")
++# The admitted outbox entry is retained so the lifecycle closure can later
++# reconstruct stage one from stored evidence. Validating a digest in memory
++# and then discarding the artifact is why reconstruction was never verifiable.
++OUTBOX_DIR_REL = Path("intr-materialization-outbox")
+ AUTHORITY_EFFECT = "NONE_INGRESS_ONLY"
+ 
+ 
+@@ -86,6 +90,7 @@ def _request_from_node_trigger(payload: Any) -> tuple[dict[str, Any], dict[str,
+         "node_id": entry.get("node_id"),
+         "interlock_id": entry.get("interlock_id"),
+         "outbox_entry_hash": entry.get("outbox_entry_hash"),
++        "node_outbox_entry": dict(entry),
+     }, dict(binding) if isinstance(binding, dict) else None
+ 
+ 
+@@ -139,6 +144,9 @@ def admit(*, runtime_root: Path, body: bytes, headers: Mapping[str, str]) -> dic
+     request_path = runtime_root / hil.REQUEST_DIR_REL / f"{materialization_id}.json"
+     request_raw = json.dumps(request, sort_keys=True, indent=2).encode("utf-8") + b"\n"
+     hil._write_once(request_path, request_raw)
++    outbox_path = runtime_root / OUTBOX_DIR_REL / f"{materialization_id}.json"
++    outbox_raw = json.dumps(source["node_outbox_entry"], sort_keys=True, indent=2).encode("utf-8") + b"\n"
++    hil._write_once(outbox_path, outbox_raw)
+     receipt_path = runtime_root / RECEIPT_DIR / f"{materialization_id}.json"
+     if receipt_path.exists():
+         existing = json.loads(receipt_path.read_text(encoding="utf-8"))
+@@ -160,6 +168,7 @@ def admit(*, runtime_root: Path, body: bytes, headers: Mapping[str, str]) -> dic
+         "outbox_entry_hash": source["outbox_entry_hash"],
+         "transport_payload_sha256": transport["payload_sha256"],
+         "queue_ref": str(request_path),
++        "outbox_entry_ref": str(outbox_path),
+         "binding_payload_ref": request["payload_ref"] if binding is not None else None,
+         "binding_custody_ref": str(binding_path) if binding_path is not None else None,
+         "exact_request_validated": True,
+@@ -180,4 +189,4 @@ def admit(*, runtime_root: Path, body: bytes, headers: Mapping[str, str]) -> dic
+     return {**receipt, "dispatch": dispatch}
+ 
+ 
+-__all__ = ["DESTINATION", "DOWNSTREAM_OWNER", "RECEIPT_SCHEMA", "admit", "is_stegbrowser"]
++__all__ = ["DESTINATION", "DOWNSTREAM_OWNER", "OUTBOX_DIR_REL", "RECEIPT_SCHEMA", "admit", "is_stegbrowser"]
