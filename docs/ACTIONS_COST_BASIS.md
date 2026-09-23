@@ -1,4 +1,19 @@
-# GitHub Actions cost basis — measured
+# GitHub Actions billing — measured
+
+## Scope correction
+
+This measures **billing**: what GitHub charges for Actions minutes. That is an invoice
+question, and billing data answers it.
+
+It is **not** worker cost analysis. Worker cost analysis is the factor that determines the
+worker lifecycle, and the qualifier for establishing a precise lifecycle for governance and
+record keeping — see `WORKER_LIFECYCLE_COST_QUALIFIER.md`, which is the one the canonical
+`cost-basis/` corpus is about. `external_cost_usd` is one field of eight in those records
+and is `0` throughout.
+
+Both are real; they are different axes. This document was originally filed under the wrong
+one. What follows is unchanged and remains correct as a billing measurement.
+
 
 Measured: 2026-09-23. Re-run with `tools/measure_actions_cost_basis.py`; the record it
 produces is `data/cost-basis/measured-actions-cost-basis.json`.
@@ -23,8 +38,9 @@ estimates, and they say so. Counted:
 The one record that states its basis states it plainly:
 `CONSERVATIVE_SOURCE_BOUNDED_ONE_SHOT_NOT_EMPIRICAL_RUNTIME_MEASUREMENT`.
 
-`STEGOS-GOVERNED-FREE-TIER-UNIT-ECONOMICS-001` requires `COSTS_MEASURED_NOT_ESTIMATED`. This
-measures one component — GitHub Actions — from retained run evidence.
+`STEGOS-GOVERNED-FREE-TIER-UNIT-ECONOMICS-001` requires `COSTS_MEASURED_NOT_ESTIMATED` and
+lists `GITHUB_ACTIONS_COST_MEASURED` among its components. This measures that one component
+from retained run evidence. It does not address the lifecycle question the corpus exists for.
 
 ## The two facts that decide an Actions bill
 

@@ -1,74 +1,72 @@
-# SDK staging — worker cost binding
+# SDK staging — worker lifecycle qualifier
 
 Two files destined for `StegVerse-org/StegVerse-SDK`, staged here because this session
 cannot attach that repository: `add_repo` refuses a cross-tier add, since the session
-already holds `stegverse-labs` sources. They are staged rather than described so the SDK
-write is a copy, not a re-authoring.
+already holds `stegverse-labs` sources. They are staged byte-identical to what the SDK
+needs so the write there is a copy, not a re-authoring.
 
 | staged here | drops into the SDK at |
 |---|---|
-| `stegverse/worker_cost_binding.py` | `stegverse/worker_cost_binding.py` |
-| `tests/test_worker_cost_binding.py` | `tests/test_worker_cost_binding.py` |
+| `stegverse/worker_lifecycle_qualifier.py` | `stegverse/worker_lifecycle_qualifier.py` |
+| `tests/test_worker_lifecycle_qualifier.py` | `tests/test_worker_lifecycle_qualifier.py` |
 
 ## What it does
 
-Binds the measured Actions cost basis — `docs/ACTIONS_COST_BASIS.md` and
-`data/cost-basis/measured-actions-cost-basis.json` — to a purpose-bound worker at task
-assignment, so the SDK can demonstrate the exact billed cost of creating a worker rather
-than only its derived lifetime.
+Qualifies a purpose-bound worker's lifetime at task assignment. `purpose_bound_worker`
+accepts `max_lifetime_seconds` and checks only that it is a positive integer — nothing
+checks that the lifetime is justified by the work the worker exists to do.
 
-The calculation is deterministic and offline: no network, no account state, no I/O. That
-is deliberate — a test demonstrating the binding must not depend on a live bill.
+Worker cost analysis is the factor that determines the lifecycle, and the lifecycle is what
+governance and record keeping bind to: the expiry is the window in which a worker may act,
+and therefore the window its receipts cover.
+
+Three verdicts:
 
 ```
-billed_units = 0                                   if the substrate is public
-             = ceil(lifetime_s / 60) x multiplier  if private   (linux 1, windows 2, macos 10)
-total        = billed_units x worker_count
+QUALIFIED_DERIVED_FROM_STATED_COST        derivation stated, names cost factors the record
+                                          carries, and expiry covers expected work
+ASSERTED_NOT_DERIVED                      expiry covers the work, nothing derives it
+UNSATISFIABLE_EXPIRY_BELOW_EXPECTED_WORK  the worker would expire before finishing
 ```
 
-## What it demonstrates against the SDK's own fixture
+**It refuses to supply a coefficient nobody stated.** Choosing how many beats a compute unit
+earns is an economics decision with governance consequences; inventing one would manufacture
+the false precision this exists to expose. It requires the derivation to be stated and checks
+only what follows from meaning.
 
-`inspection/examples/tt-purpose-worker-cost-demo.example.json` ships three cost classes.
-Applying the measured billing rule to them:
+## What it demonstrates
 
-| cost class | compute units | derived lifetime | billed (private linux) |
-|---|---|---|---|
-| LOW | 1 | 15s | **1 min** |
-| MEDIAN | 3 | 30s | **1 min** |
-| HIGH | 9 | 60s | **1 min** |
-| CONCURRENT (x3) | 9 aggregate | 30s each | **3 min** |
+Against the canonical corpus in `StegVerse-Labs/.github/cost-basis/`, 48 records carrying
+both a cost estimate and a heartbeat estimate:
 
-Two results follow, and the tests assert both:
+| | |
+|---|---|
+| qualified | **1 of 48** |
+| asserted, no derivation stated | **47 of 48** |
+| unsatisfiable | 0 of 48 |
 
-1. **The shipped lifetime tiering is not a cost tiering.** A 9x spread in expected compute
-   and a 4x spread in lifetime bill identically, because every tier is under one minute.
-2. **Worker count is the cost driver.** CONCURRENT does the same aggregate compute as HIGH
-   and bills three times as much, purely for being three workers.
+Headroom (expiry over expected work) runs `min 2.0x, median 12.8x, max 2666.7x`. And two
+pairs of records carry byte-identical cost inputs with expiries **64x** and **93x** apart —
+so cost does not determine lifecycle today.
 
-At task assignment, then, the lever is how many workers are created — not how long each is
-permitted to live.
+The tests reproduce both the collision and the headroom spread, so the SDK demonstrates the
+real condition rather than a constructed one.
 
 ## Verified against the real SDK
 
-Both files were copied into a live `StegVerse-org/StegVerse-SDK` checkout and run there:
+Both files were copied into a live `StegVerse-org/StegVerse-SDK` checkout and run there with
+`python -m unittest`, which is how the SDK's CI runs tests: **10 tests, all pass.** The
+checkout was restored afterwards.
 
-```
-new module alone                  9 tests, all pass
-unittest discover, baseline     336 tests, 4 failures, 10 errors, 2 skipped
-unittest discover, with these   345 tests, 4 failures, 10 errors, 2 skipped
-```
+`tools/qualify_worker_lifecycles.py` in this repository applies **this same module** to the
+canonical corpus, so the SDK demonstration and the survey cannot diverge.
 
-The nine added tests pass and nothing else moves. The checkout was restored afterwards.
-
-The SDK's CI runs `python -m unittest` per module, which is how these were exercised.
-
-**Pre-existing and not mine:** `tests/test_external_interlock_bootstrap.py` line 29 carries
-a literal `\n` in committed source and cannot be parsed, so that module never runs. It is
-identical with and without this change. It is the same defect shape as the one repaired in
-Site PR #1456, now in a third repository.
+**Pre-existing and not mine:** the SDK's `tests/test_external_interlock_bootstrap.py` line 29
+carries a literal `\n` in committed source and cannot be parsed, so that module never runs.
+Same defect shape as the one repaired in Site PR #1456, in a third repository. The SDK's CI
+runs `unittest` per module, so it does not surface there.
 
 ## Not claimed
 
-No dollar amount: per-minute rates and plan allowances are account state, not run evidence.
-The binding grants no authority, sets no price, commits no budget and promotes no
-benchmark. It covers GitHub Actions only.
+No lifetime is asserted to be wrong and none is changed. No coefficient, ratio or bound is
+proposed. The qualifier grants no authority, sets no lifetime, and promotes nothing.
