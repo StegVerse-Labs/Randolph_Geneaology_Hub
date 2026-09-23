@@ -1,0 +1,31 @@
+{
+  "authority_effect": "NONE_QUALIFICATION_ONLY",
+  "cost_components": [
+    "expected_task_execution",
+    "known_delay",
+    "inferred_unknown_delay_reserve",
+    "records_decomposition",
+    "safety_reserve"
+  ],
+  "derived_count": 1,
+  "derived_tasks": [
+    {
+      "component_seconds": {
+        "expected_task_execution": 6,
+        "inferred_unknown_delay_reserve": 8,
+        "known_delay": 4,
+        "records_decomposition": 7,
+        "safety_reserve": 5
+      },
+      "derived_max_lifetime_seconds": 30,
+      "task_id": "SDK-TT-PURPOSE-BOUND-WORKER-RUNTIME-PROOF-001"
+    }
+  ],
+  "incomplete_count": 0,
+  "lifetime_invariant": "WORKER_LIFETIME_IS_DERIVED_PER_INTENDED_TASK_NOT_GLOBALLY_FIXED",
+  "mismatch_count": 0,
+  "no_estimate_count": 162,
+  "schema": "stegverse.worker-lifecycle-derivability-survey/v1",
+  "tasks_surveyed": 163,
+  "unreadable": []
+}
