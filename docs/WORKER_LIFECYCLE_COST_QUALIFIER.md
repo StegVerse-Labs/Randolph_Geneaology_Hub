@@ -1,124 +1,133 @@
-# Worker cost analysis qualifies the lifecycle
+# The task's resource cost determines the worker lifecycle
 
-Measured: 2026-09-23 against `StegVerse-Labs/.github/cost-basis/`.
+Measured: 2026-09-23 against `StegVerse-Labs/.github`.
 Re-run with `tools/qualify_worker_lifecycles.py`.
 
-## What worker cost analysis is for
-
-It is not billing. Billing is what a provider charges, and that question is answered by
-billing data.
-
-Worker cost analysis is the factor that **determines the worker lifecycle**, and it is the
-qualifier for establishing a *precise* lifecycle. That precision is what governance and
-record keeping depend on: `expiry_candidate_beats` is the window in which a worker may act,
-so it is also the window its receipts cover. A lifecycle nothing derives is a governance
-bound nobody can check.
-
-The canonical corpus already has the right shape. Each record carries cost factors and a
-heartbeat estimate:
+## The chain
 
 ```
-cost_estimate   compute_units, token_units, storage_bytes, network_bytes,
-                operator_seconds, latency_ms, failure_recovery_units
-hb_estimate     expected_completion_beats, expected_idle_beats,
-                expiry_candidate_beats, confidence
+task  ->  estimated resource cost  ->  worker lifecycle
 ```
 
-`external_cost_usd` is one field of eight, and it is `0` in every record that carries it.
-Money is incidental here. The substance is work and time.
+This is not billing. Billing is what a provider charges, and billing data answers it. The
+cost that determines a worker lifecycle is the **resource cost of the task assigned**, and
+the lifecycle is what governance and record keeping bind to: the expiry is the window in
+which a worker may act, and therefore the window its receipts cover.
 
-## The finding: the lifecycle is assigned, not derived
+## The model already exists, and it is correct
 
-Across the 48 records carrying both a cost estimate and a heartbeat estimate:
+`SDK-TT-PURPOSE-BOUND-WORKER-RUNTIME-PROOF-001` states the invariant:
+
+```
+WORKER_LIFETIME_IS_DERIVED_PER_INTENDED_TASK_NOT_GLOBALLY_FIXED
+```
+
+and gives the derivation as five resource-cost components that sum to the lifetime:
+
+```
+expected_task_execution           6
+known_delay                       4
+inferred_unknown_delay_reserve    8
+records_decomposition             7
+safety_reserve                    5
+                               = 30 seconds
+```
+
+Production requires `recompute_per_task`, `cost_analysis_required`, every component, and
+`budget_extension_requires_new_governed_recalculation`. The SDK's
+`purpose_bound_worker_cost_demo._sum_budget` already sums exactly these five.
+
+**So the formula is not missing, and nothing here invents one.**
+
+## What is missing is the input
+
+The estimate belongs on the task. Measured across all 163 canonical task records:
 
 | | |
 |---|---|
-| qualified — expiry derived from stated cost | **1 of 48** |
-| asserted — no derivation stated | **47 of 48** |
-| unsatisfiable — expiry below expected work | 0 of 48 |
+| lifetime derivable from the task's resource cost | **1 of 163** |
+| task states no resource cost estimate | **162 of 163** |
+| estimate incomplete | 0 |
+| claimed lifetime disagreeing with its components | 0 |
 
-The floor holds everywhere: no worker is required to finish after it expires. That is the
-one property the corpus gets right, and it is worth keeping.
+The one task that derives a lifetime is `SDK-TT-PURPOSE-BOUND-WORKER-RUNTIME-PROOF-001` —
+the task whose purpose is to prove the model. It derives 30s from the components above.
 
-But the ceiling is unexplained. Headroom — expiry over expected work — runs:
+Every other task assigns work whose worker lifetime nothing derives.
 
-```
-min 2.0x     median 12.8x     max 2666.7x
-```
+### The corpus is disconnected from the other side too
 
-A worker may be granted twice the beats it needs, or two and a half thousand times, and no
-record says why.
-
-### Identical cost buys different lifetimes
-
-The decisive evidence. Two pairs of records carry **byte-identical cost inputs** and grant
-different expiries:
+`cost-basis/worker-runtime/` holds 61 records keyed by `task_class`. Only **5 of 61**
+resolve to a canonical task id, and only **1 of 163** tasks carries a `cost_basis_ref`.
+That one reference exists because it was repaired: the same task record names the defect
+as
 
 ```
-compute_units 1, storage_bytes 1048576, failure_recovery_units 1
-   stegverse001-bounded-autonomy-runtime      64 beats
-   stegagents-governed-runtime              4096 beats     64x
-
-compute_units 4, storage_bytes 8388608, failure_recovery_units 2
-   sv-dn1-repository-persistence-dispatch    256 beats
-   tvc-repository-broker-validation        24000 beats     93x
+DANGLING_COST_BASIS_REF_CAUSED_EXPIRY_BASIS_UNAVAILABLE
 ```
 
-If the cost estimate determined the lifecycle, identical cost would produce identical
-lifetime. It does not. `cost_determines_lifecycle: false`.
+A dangling cost-basis reference left the expiry basis unavailable. The repair pointed it at
+a real record. The other 162 tasks were never wired up at all.
 
 ## What this costs governance
 
-The expiry is the governance window. When it is asserted rather than derived:
+When a task states no resource cost:
 
-- **The record cannot be validated.** There is no statement to check a lifetime against, so
-  a wrong expiry and a right one are indistinguishable in review.
-- **Receipts bind to an arbitrary window.** A receipt covering a 4096-beat window and one
-  covering 64 beats look equally authoritative when the underlying work was the same.
-- **Drift is undetectable.** If the work a task class does changes, nothing says the
+- **No lifetime can be derived**, so any lifetime a worker gets is either defaulted or
+  assigned — and a defaulted lifetime is precisely the globally-fixed lifetime the
+  invariant forbids.
+- **The record cannot be validated.** There is no estimate to check a lifetime against, so
+  a correct expiry and a wrong one are indistinguishable in review.
+- **Drift is undetectable.** If the work a task does changes, nothing says its worker's
   lifetime should change with it, so it will not.
 
-That is the same defect shape this repository has been cataloguing, arriving at the place
-it matters most: an assertion whose basis was never written down.
+Independent evidence that this is real rather than theoretical: among the 48 cost-basis
+records carrying both a cost and a heartbeat estimate, two pairs hold byte-identical cost
+inputs while granting expiries **64x** and **93x** apart. Identical cost, different
+lifetime — which cannot happen where the lifetime is derived.
 
-## What the qualifier does, and refuses to do
+## What the qualifier does
 
-`sdk-staging/stegverse/worker_lifecycle_qualifier.py` returns one of three verdicts:
+`sdk-staging/stegverse/worker_lifecycle_qualifier.py` derives the lifetime from the task's
+estimated resource cost, using the canonical five components, and returns:
 
 ```
-QUALIFIED_DERIVED_FROM_STATED_COST     a derivation is stated and names cost factors the
-                                       record actually carries, and expiry covers the work
-ASSERTED_NOT_DERIVED                   expiry covers the work, but nothing derives it
-UNSATISFIABLE_EXPIRY_BELOW_EXPECTED_WORK   the worker would expire before finishing
+DERIVED_FROM_TASK_RESOURCE_COST             all five components present; lifetime is their sum
+TASK_STATES_NO_RESOURCE_COST_ESTIMATE       nothing to derive from
+RESOURCE_COST_ESTIMATE_INCOMPLETE           the model requires every component
+CLAIMED_LIFETIME_DISAGREES_WITH_ITS_COMPONENTS   a stated lifetime that its own numbers contradict
 ```
 
-**It refuses to supply a coefficient nobody stated.** Choosing how many beats a compute unit
-earns is an economics decision with governance consequences, and inventing one here would
-manufacture exactly the false precision this document is about. What the qualifier does
-instead is require the derivation to be stated, and check the conditions that follow from
-meaning alone — that a worker cannot be required to finish after it expires, and that a
-stated basis must refer to cost factors the record carries rather than to nothing.
-
-So `ASSERTED_NOT_DERIVED` is not a claim that a lifetime is wrong. It is the claim that
-nothing establishes it, which is the honest status of 47 of 48 records today.
+It never defaults a lifetime when the estimate is absent. Returning a number there would
+manufacture the fixed lifetime the invariant exists to forbid, and would hide the finding
+rather than report it.
 
 ## Re-running
 
 ```bash
 python3 tools/qualify_worker_lifecycles.py \
-  --cost-basis-root /home/user/stegverse-labs/.github/cost-basis \
-  --json data/cost-basis/worker-lifecycle-qualification.json
+  --task-records-root /home/user/stegverse-labs/.github/data/canonical-task-records \
+  --json data/cost-basis/worker-lifecycle-derivability.json
 ```
 
-Exit `0` when every record qualifies, `3` when any is asserted or unsatisfiable, `2` when
-the corpus cannot be read. It exits `3` today.
+Exit `0` when every task derives a lifetime, `3` when any cannot, `2` when the corpus is
+absent. It exits `3` today.
 
 The survey and the SDK demonstration run **the same qualifier module**, so they cannot
 diverge.
 
+Resource cost estimates are located by searching each record for the five components
+together, rather than at a fixed path, because no convention has settled — the one task
+that carries an estimate holds it under `lifetime_model.demonstration.components_seconds`.
+A stricter reader would report every other task as mis-shaped rather than estimateless,
+overstating the problem.
+
 ## Not claimed
 
-No lifetime is asserted to be wrong, and none is changed. No coefficient, ratio or bound is
-proposed. 13 records carry no cost/heartbeat pair and are reported as skipped rather than
-counted. This is a qualification of what the records state, and it grants no authority,
-sets no lifetime and promotes nothing.
+No lifetime is asserted wrong, and none is changed. No component value is proposed for any
+task. Deciding what a given task's expected execution, delay, reserve, decomposition and
+safety actually are is the estimate itself, and that is the work this measurement says is
+missing — not work this measurement performs.
+
+`docs/ACTIONS_COST_BASIS.md` measures GitHub Actions billing. It is a different axis and is
+scoped as such; it does not bear on worker lifecycle.

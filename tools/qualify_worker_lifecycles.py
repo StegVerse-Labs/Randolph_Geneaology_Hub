@@ -1,26 +1,27 @@
 #!/usr/bin/env python3
-"""Qualify every canonical worker-runtime lifecycle against its own cost estimate.
+"""Measure how many canonical tasks can derive a worker lifecycle from their resource cost.
 
-Worker cost analysis is the factor that determines worker lifecycle, and the lifecycle is
-what governance and record keeping bind to: `expiry_candidate_beats` is the window in which
-a worker may act, and therefore the window its receipts cover. A window nothing derives is
-a governance bound nobody can check.
+The canonical model is stated in SDK-TT-PURPOSE-BOUND-WORKER-RUNTIME-PROOF-001:
 
-This applies the staged SDK qualifier (sdk-staging/stegverse/worker_lifecycle_qualifier.py)
-to the canonical corpus in StegVerse-Labs/.github/cost-basis/, so the SDK demonstration and
-this survey cannot diverge -- they are the same code.
+    WORKER_LIFETIME_IS_DERIVED_PER_INTENDED_TASK_NOT_GLOBALLY_FIXED
 
-It reads local files only. It grants no authority, changes no record, and sets no lifetime.
+with the lifetime derived as the sum of five resource-cost components, recomputed per
+task. The formula is not missing. What is missing is the input: the estimated resource
+cost belongs on the task, and a task without one cannot derive the window its worker may
+act in -- which is the window its receipts cover.
 
-Exit 0 when every record qualifies, 3 when any is asserted or unsatisfiable, 2 when the
-corpus cannot be read.
+This applies the staged SDK qualifier to the canonical task records, so the SDK
+demonstration and this survey are the same code and cannot diverge.
+
+Reads local files only. Grants no authority, changes no record, sets no lifetime.
+
+Exit 0 when every task derives a lifetime, 3 when any cannot, 2 when the corpus is absent.
 """
 from __future__ import annotations
 
 import argparse
 import importlib.util
 import json
-import statistics
 import sys
 from pathlib import Path
 
@@ -37,89 +38,103 @@ def load_qualifier():
     return mod
 
 
+def extract_cost(record: dict, components: tuple[str, ...]) -> dict | None:
+    """Find a resource cost estimate anywhere in a task record.
+
+    Searched rather than read from a fixed path because no convention has settled: the one
+    task carrying an estimate holds it under lifetime_model.demonstration.components_seconds.
+    A stricter reader would report every other task as merely mis-shaped rather than
+    estimateless, which would overstate the problem.
+    """
+    found: dict | None = None
+
+    def walk(node):
+        nonlocal found
+        if found is not None:
+            return
+        if isinstance(node, dict):
+            if all(c in node for c in components):
+                found = {c: node[c] for c in components}
+                return
+            for value in node.values():
+                walk(value)
+        elif isinstance(node, list):
+            for value in node:
+                walk(value)
+
+    walk(record)
+    return found
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--cost-basis-root", type=Path,
-                    default=Path("/home/user/stegverse-labs/.github/cost-basis"))
-    ap.add_argument("--json", type=Path, help="write the qualification record here")
+    ap.add_argument("--task-records-root", type=Path,
+                    default=Path("/home/user/stegverse-labs/.github/data/canonical-task-records"))
+    ap.add_argument("--json", type=Path, help="write the survey record here")
     args = ap.parse_args()
 
-    if not args.cost_basis_root.is_dir():
-        print(f"cost-basis corpus not present: {args.cost_basis_root}", file=sys.stderr)
+    if not args.task_records_root.is_dir():
+        print(f"canonical task records not present: {args.task_records_root}", file=sys.stderr)
         return 2
 
     wlq = load_qualifier()
-    assignments, names, skipped = [], [], []
-    for path in sorted(args.cost_basis_root.rglob("*.json")):
+    assignments, unreadable = [], []
+    for path in sorted(args.task_records_root.glob("*.json")):
         try:
             rec = json.loads(path.read_text(encoding="utf-8"))
         except (OSError, json.JSONDecodeError) as exc:
-            skipped.append((path.name, f"unreadable: {exc}"))
+            unreadable.append((path.stem, str(exc)))
             continue
-        cost, hb = rec.get("cost_estimate"), rec.get("hb_estimate")
-        if not isinstance(cost, dict) or not isinstance(hb, dict):
-            skipped.append((path.name, "no cost_estimate and hb_estimate pair"))
-            continue
-        derivation = None
-        basis = rec.get("estimate_basis") or rec.get("expiry_basis")
-        if basis:
-            # A stated basis only counts if it names cost factors the record carries.
-            derivation = {"basis": str(basis),
-                          "derived_from": [f for f in wlq.COST_FACTORS if cost.get(f) is not None]}
-        assignments.append({
-            "schema": wlq.SCHEMA,
-            "cost_estimate": cost,
-            "lifecycle": hb,
-            **({"derivation": derivation} if derivation else {}),
-        })
-        names.append(path.stem)
+        cost = extract_cost(rec, wlq.COST_COMPONENTS)
+        a = {"schema": wlq.SCHEMA, "task_id": rec.get("task_id") or path.stem}
+        if cost:
+            a["estimated_resource_cost"] = cost
+        assignments.append(a)
 
     if not assignments:
-        print("no qualifiable records found", file=sys.stderr)
+        print("no task records found", file=sys.stderr)
         return 2
 
     result = wlq.qualify_many(assignments)
-    rows = list(zip(names, result["qualifications"]))
-    ratios = [q["headroom_ratio"] for _, q in rows if q["headroom_ratio"] is not None]
+    total = result["tasks_qualified"]
+    derived = result["derived_count"]
 
-    print(f"{len(rows)} qualifiable records ({len(skipped)} skipped)\n")
-    print(f"  qualified (derived from stated cost) : {result['qualified_count']}")
-    print(f"  asserted  (no derivation stated)     : {result['asserted_count']}")
-    print(f"  unsatisfiable (expiry below work)    : {result['unsatisfiable_count']}")
-    if ratios:
-        print(f"\n  headroom expiry/work  min={min(ratios):.1f}x  "
-              f"median={statistics.median(ratios):.1f}x  max={max(ratios):.1f}x")
-    coll = result["identical_cost_different_expiry"]
-    print(f"\n  identical cost, different expiry: {len(coll)} group(s)")
-    for c in coll:
-        factors = {k: v for k, v in c["cost_factors"].items() if v not in (None, 0)}
-        print(f"     {factors}")
-        print(f"        expiries {c['expiries']}")
-    print(f"\n  cost_determines_lifecycle: {result['cost_determines_lifecycle']}")
+    print(f"{total} canonical task records ({len(unreadable)} unreadable)\n")
+    print(f"  lifetime derivable from the task's resource cost : {derived}")
+    print(f"  task states no resource cost estimate            : {result['no_estimate_count']}")
+    print(f"  resource cost estimate incomplete               : {result['incomplete_count']}")
+    print(f"  claimed lifetime disagrees with its components  : {result['mismatch_count']}")
+    print(f"\n  invariant: {result['lifetime_invariant']}")
+
+    for q in result["qualifications"]:
+        if q["verdict"] == wlq.DERIVED:
+            print(f"\n  derived: {q['task_id']}")
+            print(f"     {q['component_seconds']}")
+            print(f"     -> {q['derived_max_lifetime_seconds']}s")
 
     if args.json:
         args.json.parent.mkdir(parents=True, exist_ok=True)
         args.json.write_text(json.dumps({
-            "schema": "stegverse.worker-lifecycle-qualification-survey/v1",
-            "records_qualified": len(rows),
-            "records_skipped": [{"record": n, "reason": r} for n, r in skipped],
-            "qualified_count": result["qualified_count"],
-            "asserted_count": result["asserted_count"],
-            "unsatisfiable_count": result["unsatisfiable_count"],
-            "headroom_min": min(ratios) if ratios else None,
-            "headroom_median": statistics.median(ratios) if ratios else None,
-            "headroom_max": max(ratios) if ratios else None,
-            "identical_cost_different_expiry": coll,
-            "cost_determines_lifecycle": result["cost_determines_lifecycle"],
-            "per_record": [{"record": n, "verdict": q["verdict"],
-                            "expiry_candidate_beats": q["expiry_candidate_beats"],
-                            "expected_work_beats": q["expected_work_beats"],
-                            "headroom_ratio": q["headroom_ratio"]} for n, q in rows],
+            "schema": "stegverse.worker-lifecycle-derivability-survey/v1",
+            "lifetime_invariant": result["lifetime_invariant"],
+            "cost_components": list(wlq.COST_COMPONENTS),
+            "tasks_surveyed": total,
+            "unreadable": [{"task": t, "reason": r} for t, r in unreadable],
+            "derived_count": derived,
+            "no_estimate_count": result["no_estimate_count"],
+            "incomplete_count": result["incomplete_count"],
+            "mismatch_count": result["mismatch_count"],
+            "derived_tasks": [
+                {"task_id": q["task_id"],
+                 "component_seconds": q["component_seconds"],
+                 "derived_max_lifetime_seconds": q["derived_max_lifetime_seconds"]}
+                for q in result["qualifications"] if q["verdict"] == wlq.DERIVED
+            ],
             "authority_effect": "NONE_QUALIFICATION_ONLY",
         }, indent=2, sort_keys=True) + "\n", encoding="utf-8")
         print(f"\nwrote {args.json}")
 
-    return 0 if result["qualified_count"] == len(rows) else 3
+    return 0 if derived == total else 3
 
 
 if __name__ == "__main__":

@@ -1,8 +1,8 @@
-"""Keep the staged SDK qualifier honest against the corpus survey that cites it.
+"""Keep the staged SDK qualifier honest against the survey that cites it.
 
-tools/qualify_worker_lifecycles.py applies the staged module to the canonical corpus. If
-the module and the recorded survey disagree, the SDK would demonstrate a qualification this
-repository no longer supports. These tests tie them together.
+tools/qualify_worker_lifecycles.py applies the staged module to the canonical task records.
+If the module and the recorded survey disagree, the SDK would demonstrate a derivation this
+repository no longer supports.
 """
 from __future__ import annotations
 
@@ -14,7 +14,15 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 STAGED = ROOT / "sdk-staging/stegverse/worker_lifecycle_qualifier.py"
 STAGED_TEST = ROOT / "sdk-staging/tests/test_worker_lifecycle_qualifier.py"
-SURVEY = ROOT / "data/cost-basis/worker-lifecycle-qualification.json"
+SURVEY = ROOT / "data/cost-basis/worker-lifecycle-derivability.json"
+
+CANONICAL = {
+    "expected_task_execution": 6,
+    "known_delay": 4,
+    "inferred_unknown_delay_reserve": 8,
+    "records_decomposition": 7,
+    "safety_reserve": 5,
+}
 
 
 def _load():
@@ -25,21 +33,6 @@ def _load():
     return mod
 
 
-def _assignment(mod, expiry, completion=1, idle=0, derivation=None):
-    a = {
-        "schema": mod.SCHEMA,
-        "cost_estimate": {"compute_units": 1, "failure_recovery_units": 1},
-        "lifecycle": {
-            "expected_completion_beats": completion,
-            "expected_idle_beats": idle,
-            "expiry_candidate_beats": expiry,
-        },
-    }
-    if derivation:
-        a["derivation"] = derivation
-    return a
-
-
 def test_staged_files_parse():
     for path in (STAGED, STAGED_TEST):
         ast.parse(path.read_text(encoding="utf-8"))
@@ -47,39 +40,33 @@ def test_staged_files_parse():
 
 def test_survey_records_the_corpus_condition():
     survey = json.loads(SURVEY.read_text(encoding="utf-8"))
-    assert survey["records_qualified"] == 48
-    assert survey["qualified_count"] == 1
-    assert survey["asserted_count"] == 47
-    assert survey["unsatisfiable_count"] == 0
-    assert survey["cost_determines_lifecycle"] is False
-    assert len(survey["identical_cost_different_expiry"]) == 2
+    assert survey["tasks_surveyed"] == 163
+    assert survey["derived_count"] == 1
+    assert survey["no_estimate_count"] == 162
+    assert survey["derived_tasks"][0]["task_id"] == "SDK-TT-PURPOSE-BOUND-WORKER-RUNTIME-PROOF-001"
+    assert survey["derived_tasks"][0]["derived_max_lifetime_seconds"] == 30
 
 
-def test_a_lifetime_without_a_derivation_is_asserted():
+def test_module_reproduces_the_canonical_worked_example():
     mod = _load()
-    assert mod.qualify_worker_lifecycle(_assignment(mod, 16))["verdict"] == mod.ASSERTED
+    assert mod.derive_lifetime_from_resource_cost(CANONICAL) == 30
 
 
-def test_a_derivation_naming_a_carried_factor_qualifies():
+def test_module_components_match_the_canonical_model():
     mod = _load()
-    r = mod.qualify_worker_lifecycle(_assignment(
-        mod, 16, derivation={"basis": "per compute unit", "derived_from": ["compute_units"]}))
-    assert r["verdict"] == mod.QUALIFIED
+    assert set(mod.COST_COMPONENTS) == set(CANONICAL)
+    assert mod.LIFETIME_INVARIANT == "WORKER_LIFETIME_IS_DERIVED_PER_INTENDED_TASK_NOT_GLOBALLY_FIXED"
 
 
-def test_expiry_below_expected_work_is_unsatisfiable():
+def test_a_task_without_an_estimate_derives_nothing_and_defaults_nothing():
     mod = _load()
-    r = mod.qualify_worker_lifecycle(_assignment(mod, 4, completion=8, idle=2))
-    assert r["verdict"] == mod.UNSATISFIABLE
-
-
-def test_identical_cost_different_expiry_is_reported_as_a_collision():
-    mod = _load()
-    r = mod.qualify_many([_assignment(mod, 64), _assignment(mod, 4096)])
-    assert r["cost_determines_lifecycle"] is False
-    assert r["identical_cost_different_expiry"][0]["expiries"] == [64, 4096]
+    r = mod.qualify_task_lifecycle({"schema": mod.SCHEMA, "task_id": "T"})
+    assert r["verdict"] == mod.NO_ESTIMATE
+    assert r["derived_max_lifetime_seconds"] is None
 
 
 def test_qualifier_grants_no_authority():
     mod = _load()
-    assert mod.qualify_worker_lifecycle(_assignment(mod, 16))["authority_effect"] == "NONE_QUALIFICATION_ONLY"
+    r = mod.qualify_task_lifecycle({"schema": mod.SCHEMA, "task_id": "T",
+                                    "estimated_resource_cost": CANONICAL})
+    assert r["authority_effect"] == "NONE_QUALIFICATION_ONLY"

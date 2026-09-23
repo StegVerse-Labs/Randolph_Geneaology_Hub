@@ -12,45 +12,41 @@ needs so the write there is a copy, not a re-authoring.
 
 ## What it does
 
-Qualifies a purpose-bound worker's lifetime at task assignment. `purpose_bound_worker`
-accepts `max_lifetime_seconds` and checks only that it is a positive integer — nothing
-checks that the lifetime is justified by the work the worker exists to do.
-
-Worker cost analysis is the factor that determines the lifecycle, and the lifecycle is what
-governance and record keeping bind to: the expiry is the window in which a worker may act,
-and therefore the window its receipts cover.
-
-Three verdicts:
+Derives a purpose-bound worker's lifetime from the **resource cost of the task assigned**:
 
 ```
-QUALIFIED_DERIVED_FROM_STATED_COST        derivation stated, names cost factors the record
-                                          carries, and expiry covers expected work
-ASSERTED_NOT_DERIVED                      expiry covers the work, nothing derives it
-UNSATISFIABLE_EXPIRY_BELOW_EXPECTED_WORK  the worker would expire before finishing
+task  ->  estimated resource cost  ->  worker lifecycle
 ```
 
-**It refuses to supply a coefficient nobody stated.** Choosing how many beats a compute unit
-earns is an economics decision with governance consequences; inventing one would manufacture
-the false precision this exists to expose. It requires the derivation to be stated and checks
-only what follows from meaning.
+The canonical model already states this. `SDK-TT-PURPOSE-BOUND-WORKER-RUNTIME-PROOF-001`
+gives the invariant `WORKER_LIFETIME_IS_DERIVED_PER_INTENDED_TASK_NOT_GLOBALLY_FIXED` and
+the derivation as five components summing to the lifetime — the same five
+`purpose_bound_worker_cost_demo._sum_budget` already sums. **This invents no formula.**
+
+Four verdicts:
+
+```
+DERIVED_FROM_TASK_RESOURCE_COST                 all five components present; lifetime is their sum
+TASK_STATES_NO_RESOURCE_COST_ESTIMATE           nothing to derive from
+RESOURCE_COST_ESTIMATE_INCOMPLETE               the model requires every component
+CLAIMED_LIFETIME_DISAGREES_WITH_ITS_COMPONENTS  a lifetime its own numbers contradict
+```
+
+It never defaults a lifetime when the estimate is absent. A default would be the
+globally-fixed lifetime the invariant forbids.
 
 ## What it demonstrates
 
-Against the canonical corpus in `StegVerse-Labs/.github/cost-basis/`, 48 records carrying
-both a cost estimate and a heartbeat estimate:
+Against all 163 canonical task records:
 
 | | |
 |---|---|
-| qualified | **1 of 48** |
-| asserted, no derivation stated | **47 of 48** |
-| unsatisfiable | 0 of 48 |
+| lifetime derivable from the task's resource cost | **1 of 163** |
+| task states no resource cost estimate | **162 of 163** |
 
-Headroom (expiry over expected work) runs `min 2.0x, median 12.8x, max 2666.7x`. And two
-pairs of records carry byte-identical cost inputs with expiries **64x** and **93x** apart —
-so cost does not determine lifecycle today.
-
-The tests reproduce both the collision and the headroom spread, so the SDK demonstrates the
-real condition rather than a constructed one.
+The one that derives is the task whose purpose is proving the model, yielding 30s from
+`6 + 4 + 8 + 7 + 5`. The tests demonstrate that worked example, the estimateless condition
+the other 162 are in, and that every component contributes.
 
 ## Verified against the real SDK
 
