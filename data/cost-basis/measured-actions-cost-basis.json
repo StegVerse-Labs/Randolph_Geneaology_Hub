@@ -1,0 +1,167 @@
+{
+  "authority_effect": "NONE_COST_BASIS_ONLY",
+  "measured_at": "2026-09-23T16:03:02Z",
+  "not_claimed": [
+    "No dollar amount is asserted; per-minute rates and plan allowances are account state, not run evidence.",
+    "Sampled runs are the most recent, not a uniform sample of all history.",
+    "Durations are wall-clock from run metadata and include queueing.",
+    "This measures GitHub Actions only, not provider, sandbox, Node, governance or custody cost."
+  ],
+  "repositories": [
+    {
+      "authority_effect": "NONE_COST_BASIS_ONLY",
+      "billed_for_actions_minutes": false,
+      "duration_seconds": {
+        "max": 132.0,
+        "mean": 19.8,
+        "median": 16.0
+      },
+      "measurement_basis": "RETAINED_WORKFLOW_RUN_METADATA",
+      "per_minute_rounding_overhead": 0.679,
+      "repository": "StegVerse-Labs/Site",
+      "runner_classes_observed": {
+        "linux": 100
+      },
+      "runner_map_available": true,
+      "runs_without_runner_mapping": 13,
+      "sample_actual_minutes": 33.0,
+      "sample_billable_units": 103,
+      "sample_billed_units": 0,
+      "sampled_runs": 100,
+      "total_runs_reported": 40000,
+      "visibility": "public"
+    },
+    {
+      "authority_effect": "NONE_COST_BASIS_ONLY",
+      "billed_for_actions_minutes": true,
+      "duration_seconds": {
+        "max": 54.0,
+        "mean": 22.9,
+        "median": 24.0
+      },
+      "measurement_basis": "RETAINED_WORKFLOW_RUN_METADATA",
+      "per_minute_rounding_overhead": 0.618,
+      "repository": "StegVerse-Labs/StegOS",
+      "runner_classes_observed": {
+        "linux": 100
+      },
+      "runner_map_available": true,
+      "runs_without_runner_mapping": 0,
+      "sample_actual_minutes": 38.2,
+      "sample_billable_units": 100,
+      "sample_billed_units": 100,
+      "sampled_runs": 100,
+      "total_runs_reported": 2597,
+      "visibility": "private"
+    },
+    {
+      "authority_effect": "NONE_COST_BASIS_ONLY",
+      "billed_for_actions_minutes": true,
+      "duration_seconds": {
+        "max": 56.0,
+        "mean": 21.4,
+        "median": 21.0
+      },
+      "measurement_basis": "RETAINED_WORKFLOW_RUN_METADATA",
+      "per_minute_rounding_overhead": 0.643,
+      "repository": "StegVerse-Labs/TVC",
+      "runner_classes_observed": {
+        "linux": 100
+      },
+      "runner_map_available": true,
+      "runs_without_runner_mapping": 0,
+      "sample_actual_minutes": 35.7,
+      "sample_billable_units": 100,
+      "sample_billed_units": 100,
+      "sampled_runs": 100,
+      "total_runs_reported": 8827,
+      "visibility": "private"
+    },
+    {
+      "authority_effect": "NONE_COST_BASIS_ONLY",
+      "billed_for_actions_minutes": false,
+      "duration_seconds": {
+        "max": 52.0,
+        "mean": 13.8,
+        "median": 12.0
+      },
+      "measurement_basis": "RETAINED_WORKFLOW_RUN_METADATA",
+      "per_minute_rounding_overhead": 0.769,
+      "repository": "StegVerse-Labs/continuity-vault-kit",
+      "runner_classes_observed": {
+        "linux": 100
+      },
+      "runner_map_available": true,
+      "runs_without_runner_mapping": 0,
+      "sample_actual_minutes": 23.1,
+      "sample_billable_units": 100,
+      "sample_billed_units": 0,
+      "sampled_runs": 100,
+      "total_runs_reported": 5787,
+      "visibility": "public"
+    },
+    {
+      "authority_effect": "NONE_COST_BASIS_ONLY",
+      "billed_for_actions_minutes": true,
+      "duration_seconds": {
+        "max": 47.0,
+        "mean": 19.9,
+        "median": 18.0
+      },
+      "measurement_basis": "RETAINED_WORKFLOW_RUN_METADATA",
+      "per_minute_rounding_overhead": 0.669,
+      "repository": "StegVerse-Labs/stegfin-governance",
+      "runner_classes_observed": {
+        "linux": 100
+      },
+      "runner_map_available": true,
+      "runs_without_runner_mapping": 0,
+      "sample_actual_minutes": 33.1,
+      "sample_billable_units": 100,
+      "sample_billed_units": 100,
+      "sampled_runs": 100,
+      "total_runs_reported": 2948,
+      "visibility": "private"
+    },
+    {
+      "authority_effect": "NONE_COST_BASIS_ONLY",
+      "billed_for_actions_minutes": false,
+      "duration_seconds": {
+        "max": 47.0,
+        "mean": 13.6,
+        "median": 12.0
+      },
+      "measurement_basis": "RETAINED_WORKFLOW_RUN_METADATA",
+      "per_minute_rounding_overhead": 0.773,
+      "repository": "StegVerse-Labs/Randolph_Geneaology_Hub",
+      "runner_classes_observed": {
+        "linux": 49
+      },
+      "runner_map_available": true,
+      "runs_without_runner_mapping": 0,
+      "sample_actual_minutes": 11.1,
+      "sample_billable_units": 49,
+      "sample_billed_units": 0,
+      "sampled_runs": 49,
+      "total_runs_reported": 49,
+      "visibility": "public"
+    }
+  ],
+  "sample_per_repository": 100,
+  "schema": "stegverse.measured-actions-cost-basis/v1",
+  "summary": {
+    "billed_repositories": [
+      "StegVerse-Labs/StegOS",
+      "StegVerse-Labs/TVC",
+      "StegVerse-Labs/stegfin-governance"
+    ],
+    "free_repositories": [
+      "StegVerse-Labs/Randolph_Geneaology_Hub",
+      "StegVerse-Labs/Site",
+      "StegVerse-Labs/continuity-vault-kit"
+    ],
+    "repositories_measured": 6,
+    "runs_reported_in_billed_repositories": 14372,
+    "runs_reported_in_free_repositories": 45836
+  }
+}
