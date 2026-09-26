@@ -29,11 +29,56 @@ ROOT = Path(__file__).resolve().parents[1]
 QUALIFIER = ROOT / "sdk-staging/stegverse/worker_lifecycle_qualifier.py"
 
 
+def _install_sdk_shims() -> None:
+    """Give the staged SDK module the two SDK names it imports.
+
+    The staged qualifier is written for StegVerse-org/StegVerse-SDK, where it delegates the
+    five-component sum to `purpose_bound_worker_cost_demo._sum_budget` rather than restating
+    it. That delegation is the point: one derivation, one place. It also means the file cannot
+    be loaded standalone here, because those relative imports resolve only inside the SDK
+    package.
+
+    So this census supplies them. `_sum_budget` below is a stand-in for running offline, not a
+    second implementation of record -- the SDK's is authoritative, and
+    tests/test_sdk_worker_lifecycle_qualifier_staging.py pins this one to the same contract:
+    the canonical components sum to 30, and negatives and booleans are rejected.
+    """
+    import types
+
+    class PurposeBoundWorkerError(ValueError):
+        pass
+
+    def _sum_budget(budget):
+        names = ("expected_task_execution", "known_delay", "inferred_unknown_delay_reserve",
+                 "records_decomposition", "safety_reserve")
+        values = []
+        for name in names:
+            value = budget.get(name)
+            if not isinstance(value, int) or isinstance(value, bool) or value < 0:
+                raise PurposeBoundWorkerError(f"{name} must be a nonnegative integer")
+            values.append(value)
+        return sum(values)
+
+    pkg = types.ModuleType("stegverse")
+    pkg.__path__ = []  # marks it a package so relative imports resolve
+    worker = types.ModuleType("stegverse.purpose_bound_worker")
+    worker.PurposeBoundWorkerError = PurposeBoundWorkerError
+    demo = types.ModuleType("stegverse.purpose_bound_worker_cost_demo")
+    demo._sum_budget = _sum_budget
+    demo.PurposeBoundWorkerError = PurposeBoundWorkerError
+    sys.modules.setdefault("stegverse", pkg)
+    sys.modules["stegverse.purpose_bound_worker"] = worker
+    sys.modules["stegverse.purpose_bound_worker_cost_demo"] = demo
+
+
 def load_qualifier():
-    spec = importlib.util.spec_from_file_location("worker_lifecycle_qualifier", QUALIFIER)
+    _install_sdk_shims()
+    spec = importlib.util.spec_from_file_location(
+        "stegverse.worker_lifecycle_qualifier", QUALIFIER)
     if spec is None or spec.loader is None:
         raise RuntimeError(f"cannot load qualifier: {QUALIFIER}")
     mod = importlib.util.module_from_spec(spec)
+    sys.modules["stegverse.worker_lifecycle_qualifier"] = mod
     spec.loader.exec_module(mod)
     return mod
 
