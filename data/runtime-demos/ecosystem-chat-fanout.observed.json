@@ -1,0 +1,60 @@
+{
+  "schema": "stegverse.hub.ecosystem-chat-fanout-observation/v1",
+  "authority_effect": "NONE_LOCAL_DEMONSTRATION_ONLY",
+  "real_provider_call_made": false,
+  "intr_admission_exercised": false,
+  "master_records_written": false,
+  "adapter_commit": "7c8c033fc1deda713a4567a8b8ed4548bcb7d977",
+  "routing_mode": "parallel",
+  "attempted_source_ids": [
+    "local",
+    "anthropic",
+    "deepseek",
+    "kimi"
+  ],
+  "returned_source_ids": [
+    "local",
+    "anthropic",
+    "deepseek"
+  ],
+  "refused_source_ids": [
+    "kimi"
+  ],
+  "failed_source_ids": [],
+  "skipped_source_ids": [],
+  "contributions": [
+    {
+      "source_id": "local",
+      "output": "sovereign local answer"
+    },
+    {
+      "source_id": "anthropic",
+      "output": "anthropic answer"
+    },
+    {
+      "source_id": "deepseek",
+      "output": "deepseek answer"
+    },
+    {
+      "source_id": "kimi",
+      "output": null
+    }
+  ],
+  "workload_hash": "2f44579308a735261bc46b0a433ccd385ec1646f91b627c503593dfda3c48829",
+  "execution_hash": "5263bc8ca2502ad3c90db6270633fff29f21235e44c259152376870b26aff913",
+  "schema_validates": true,
+  "authority_flags": {
+    "provider_broker_authority": false,
+    "governance_authority": false,
+    "route_authority": false,
+    "credential_authority": false,
+    "custody_authority": false,
+    "execution_admission_authority": false
+  },
+  "reproducibility": {
+    "workload_hash_reproduces": true,
+    "execution_hash_reproduces": false,
+    "cause": "LLMContribution.created_at defaults to utc_now_iso() and is inside its hashed payload",
+    "consequence": "reconstruction must replay the recorded envelope; re-executing the same workload yields a different execution_hash"
+  }
+}
