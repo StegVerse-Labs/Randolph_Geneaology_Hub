@@ -1,0 +1,443 @@
+{
+  "schema": "stegverse.worker-lifetime-estimate-proposal/v1",
+  "authority_effect": "NONE_PROPOSAL_ONLY",
+  "grants_registration": false,
+  "sets_any_lifetime": false,
+  "observed_from": {
+    "repository": "StegVerse-Labs/.github",
+    "ref": "main",
+    "commit": "7aff7844f64ba142c5b3f5c8956df17bfc4fda25",
+    "canonical_task_records": 173
+  },
+  "anchor": {
+    "task_id": "SDK-TT-PURPOSE-BOUND-WORKER-RUNTIME-PROOF-001",
+    "holds": "expected_completion_beats equals derived_max_lifetime_seconds",
+    "verified": true,
+    "value_seconds": 30
+  },
+  "component_split_not_proposed": {
+    "components": [
+      "expected_task_execution",
+      "known_delay",
+      "inferred_unknown_delay_reserve",
+      "records_decomposition",
+      "safety_reserve"
+    ],
+    "why": "One calibration point cannot determine five coefficients. That point has 15 evidence predicates, 0 dependencies, 0 blockers and 0 declared capabilities, so three of four structural signals are zero and no per-signal coefficient is identifiable from it.",
+    "what_would_resolve_it": "a stated policy from the registry owners, or a second task carrying both a component split and a cost basis"
+  },
+  "proposed": [
+    {
+      "task_id": "GADI-RESIDENT-EXECUTION-001",
+      "proposed_derived_max_lifetime_seconds": 1,
+      "source": {
+        "cost_basis_record": "cost-basis/worker-runtime/gadi-resident-execution.json",
+        "field": "hb_estimate.expected_completion_beats",
+        "confidence": "LOW"
+      },
+      "components_proposed": null,
+      "components_reason": "the five-component split is policy, not evidence; see the component_split_not_proposed block",
+      "agrees_with_existing_lifetime_model": null
+    },
+    {
+      "task_id": "SDK-TT-PURPOSE-BOUND-WORKER-RUNTIME-PROOF-001",
+      "proposed_derived_max_lifetime_seconds": 30,
+      "source": {
+        "cost_basis_record": "cost-basis/worker-runtime/stegagents-governed-runtime.json",
+        "field": "hb_estimate.expected_completion_beats",
+        "confidence": "INITIAL_BOUNDED_ESTIMATE"
+      },
+      "components_proposed": null,
+      "components_reason": "the five-component split is policy, not evidence; see the component_split_not_proposed block",
+      "agrees_with_existing_lifetime_model": true
+    },
+    {
+      "task_id": "SHARED-DOCS-PROVIDER-FREEZE-INTEGRATION-001",
+      "proposed_derived_max_lifetime_seconds": 1,
+      "source": {
+        "cost_basis_record": "cost-basis/worker-runtime/shared-docs-provider-content-integrity.json",
+        "field": "hb_estimate.expected_completion_beats",
+        "confidence": "LOW"
+      },
+      "components_proposed": null,
+      "components_reason": "the five-component split is policy, not evidence; see the component_split_not_proposed block",
+      "agrees_with_existing_lifetime_model": null
+    },
+    {
+      "task_id": "SHWP-DEVICE-KV-INTR-OBSERVATION-001",
+      "proposed_derived_max_lifetime_seconds": 8,
+      "source": {
+        "cost_basis_record": "cost-basis/worker-runtime/device-kv-intr-observation.json",
+        "field": "hb_estimate.expected_completion_beats",
+        "confidence": "LOW"
+      },
+      "components_proposed": null,
+      "components_reason": "the five-component split is policy, not evidence; see the component_split_not_proposed block",
+      "agrees_with_existing_lifetime_model": null
+    },
+    {
+      "task_id": "STEGOS-DEVICE-KV-SKAP-ROUNDTRIP-001",
+      "proposed_derived_max_lifetime_seconds": 8,
+      "source": {
+        "cost_basis_record": "cost-basis/worker-runtime/device-kv-skap-roundtrip.json",
+        "field": "hb_estimate.expected_completion_beats",
+        "confidence": "LOW"
+      },
+      "components_proposed": null,
+      "components_reason": "the five-component split is policy, not evidence; see the component_split_not_proposed block",
+      "agrees_with_existing_lifetime_model": null
+    },
+    {
+      "task_id": "SV-KV-AI-PERSISTENCE-001",
+      "proposed_derived_max_lifetime_seconds": 1,
+      "source": {
+        "cost_basis_record": "cost-basis/worker-runtime/kv-ai-memory-resident.json",
+        "field": "hb_estimate.expected_completion_beats",
+        "confidence": "LOW"
+      },
+      "components_proposed": null,
+      "components_reason": "the five-component split is policy, not evidence; see the component_split_not_proposed block",
+      "agrees_with_existing_lifetime_model": null
+    }
+  ],
+  "proposed_count": 6,
+  "cost_basis_unbound": [
+    {
+      "cost_basis_record": "cost-basis/worker-runtime/ae-relational-math-worker.json",
+      "task_class": "ae_relational_math",
+      "expected_completion_beats": null,
+      "reason": "names no canonical task id, in task_id or in evidence_refs"
+    },
+    {
+      "cost_basis_record": "cost-basis/worker-runtime/bootstrap-v1-distributable-bundle.json",
+      "task_class": "bootstrap_v1_distributable_bundle",
+      "expected_completion_beats": 8,
+      "reason": "names no canonical task id, in task_id or in evidence_refs"
+    },
+    {
+      "cost_basis_record": "cost-basis/worker-runtime/bootstrap-v1-intr-bundle-delivery.json",
+      "task_class": "bootstrap_v1_intr_bundle_delivery",
+      "expected_completion_beats": 8,
+      "reason": "names no canonical task id, in task_id or in evidence_refs"
+    },
+    {
+      "cost_basis_record": "cost-basis/worker-runtime/bootstrap-v1-release-candidate-freeze.json",
+      "task_class": "bootstrap_v1_release_candidate_freeze",
+      "expected_completion_beats": 2,
+      "reason": "names no canonical task id, in task_id or in evidence_refs"
+    },
+    {
+      "cost_basis_record": "cost-basis/worker-runtime/bootstrap-v1-source-identity-freeze.json",
+      "task_class": "bootstrap_v1_source_identity_freeze",
+      "expected_completion_beats": 2,
+      "reason": "names no canonical task id, in task_id or in evidence_refs"
+    },
+    {
+      "cost_basis_record": "cost-basis/worker-runtime/bootstrap-v1-source-package-production.json",
+      "task_class": "bootstrap_v1_source_package_production",
+      "expected_completion_beats": 8,
+      "reason": "names no canonical task id, in task_id or in evidence_refs"
+    },
+    {
+      "cost_basis_record": "cost-basis/worker-runtime/coherent-signal-formal-candidate.json",
+      "task_class": "formal_mathematical_candidate_generation",
+      "expected_completion_beats": null,
+      "reason": "names no canonical task id, in task_id or in evidence_refs"
+    },
+    {
+      "cost_basis_record": "cost-basis/worker-runtime/cosv-live-packet-automation.json",
+      "task_class": "cosv_live_packet_automation",
+      "expected_completion_beats": 1,
+      "reason": "names no canonical task id, in task_id or in evidence_refs"
+    },
+    {
+      "cost_basis_record": "cost-basis/worker-runtime/ecosystem-chat-sovereign-inference.json",
+      "task_class": "ecosystem_chat_sovereign_inference",
+      "expected_completion_beats": 1,
+      "reason": "names no canonical task id, in task_id or in evidence_refs"
+    },
+    {
+      "cost_basis_record": "cost-basis/worker-runtime/endpoint-fanout-sovereign-runtime.json",
+      "task_class": "endpoint_fanout_sovereign_runtime",
+      "expected_completion_beats": null,
+      "reason": "names no canonical task id, in task_id or in evidence_refs"
+    },
+    {
+      "cost_basis_record": "cost-basis/worker-runtime/evaluator-intr-read-runtime.json",
+      "task_class": "evaluator_intr_read_review_runtime",
+      "expected_completion_beats": 4,
+      "reason": "names no canonical task id, in task_id or in evidence_refs"
+    },
+    {
+      "cost_basis_record": "cost-basis/worker-runtime/g18-resident-request-consumption-resolution.json",
+      "task_class": "g18_resident_request_consumption_resolution",
+      "expected_completion_beats": 4,
+      "reason": "names no canonical task id, in task_id or in evidence_refs"
+    },
+    {
+      "cost_basis_record": "cost-basis/worker-runtime/governance-sovereign-task-observer.json",
+      "task_class": "governance_sovereign_task_observation",
+      "expected_completion_beats": 1,
+      "reason": "names no canonical task id, in task_id or in evidence_refs"
+    },
+    {
+      "cost_basis_record": "cost-basis/worker-runtime/healer-sovereign-scheduler.json",
+      "task_class": "healer_sovereign_scheduler",
+      "expected_completion_beats": null,
+      "reason": "names no canonical task id, in task_id or in evidence_refs"
+    },
+    {
+      "cost_basis_record": "cost-basis/worker-runtime/heartbeat-independent-oscillator-live-proof.json",
+      "task_class": "independent_heartbeat_live_proof",
+      "expected_completion_beats": 1,
+      "reason": "names no canonical task id, in task_id or in evidence_refs"
+    },
+    {
+      "cost_basis_record": "cost-basis/worker-runtime/heartbeat-oscillator-resident-start.json",
+      "task_class": "resident_heartbeat_start",
+      "expected_completion_beats": 1,
+      "reason": "names no canonical task id, in task_id or in evidence_refs"
+    },
+    {
+      "cost_basis_record": "cost-basis/worker-runtime/hil-sovereign-receiver.json",
+      "task_class": "hil_sovereign_receiver_activation",
+      "expected_completion_beats": 4,
+      "reason": "names no canonical task id, in task_id or in evidence_refs"
+    },
+    {
+      "cost_basis_record": "cost-basis/worker-runtime/host-self-attest.json",
+      "task_class": "host_runtime_self_attest",
+      "expected_completion_beats": 1,
+      "reason": "names no canonical task id, in task_id or in evidence_refs"
+    },
+    {
+      "cost_basis_record": "cost-basis/worker-runtime/kv-connection-health-reconciler.json",
+      "task_class": "kv_connection_health_reconciliation",
+      "expected_completion_beats": null,
+      "reason": "names no canonical task id, in task_id or in evidence_refs"
+    },
+    {
+      "cost_basis_record": "cost-basis/worker-runtime/kv-provider-change-observer.json",
+      "task_class": "kv_provider_change_observation",
+      "expected_completion_beats": null,
+      "reason": "names no canonical task id, in task_id or in evidence_refs"
+    },
+    {
+      "cost_basis_record": "cost-basis/worker-runtime/kv-revalidation-proof-intake.json",
+      "task_class": "kv_revalidation_proof_intake",
+      "expected_completion_beats": null,
+      "reason": "names no canonical task id, in task_id or in evidence_refs"
+    },
+    {
+      "cost_basis_record": "cost-basis/worker-runtime/native-process-canary.json",
+      "task_class": "native_process_canary",
+      "expected_completion_beats": 2,
+      "reason": "names no canonical task id, in task_id or in evidence_refs"
+    },
+    {
+      "cost_basis_record": "cost-basis/worker-runtime/organization-federation-readiness.json",
+      "task_class": "organization_federation_readiness",
+      "expected_completion_beats": 1,
+      "reason": "names no canonical task id, in task_id or in evidence_refs"
+    },
+    {
+      "cost_basis_record": "cost-basis/worker-runtime/organization-local-resident-boundary-executor.json",
+      "task_class": "organization_local_resident_boundary",
+      "expected_completion_beats": null,
+      "reason": "names no canonical task id, in task_id or in evidence_refs"
+    },
+    {
+      "cost_basis_record": "cost-basis/worker-runtime/repo-heartbeat-federation.json",
+      "task_class": "repo_heartbeat_federation",
+      "expected_completion_beats": null,
+      "reason": "names no canonical task id, in task_id or in evidence_refs"
+    },
+    {
+      "cost_basis_record": "cost-basis/worker-runtime/sdk-mcp-canonical-validation.json",
+      "task_class": "sdk_mcp_canonical_validation",
+      "expected_completion_beats": 1,
+      "reason": "names no canonical task id, in task_id or in evidence_refs"
+    },
+    {
+      "cost_basis_record": "cost-basis/worker-runtime/site-publication-intr-consumer.json",
+      "task_class": "site_publication_intr_consumer",
+      "expected_completion_beats": null,
+      "reason": "names no canonical task id, in task_id or in evidence_refs"
+    },
+    {
+      "cost_basis_record": "cost-basis/worker-runtime/sovereign-runtime-activation.json",
+      "task_class": "sovereign_runtime_activation",
+      "expected_completion_beats": 1,
+      "reason": "names no canonical task id, in task_id or in evidence_refs"
+    },
+    {
+      "cost_basis_record": "cost-basis/worker-runtime/stegfin-continuity-carrier.json",
+      "task_class": "stegfin_continuity_pretrade",
+      "expected_completion_beats": null,
+      "reason": "names no canonical task id, in task_id or in evidence_refs"
+    },
+    {
+      "cost_basis_record": "cost-basis/worker-runtime/stegfin-live-entry-observation.json",
+      "task_class": "stegfin_live_entry_observation",
+      "expected_completion_beats": 1,
+      "reason": "names no canonical task id, in task_id or in evidence_refs"
+    },
+    {
+      "cost_basis_record": "cost-basis/worker-runtime/stegfin-live-pretrade.json",
+      "task_class": "stegfin_external_pretrade",
+      "expected_completion_beats": 1,
+      "reason": "names no canonical task id, in task_id or in evidence_refs"
+    },
+    {
+      "cost_basis_record": "cost-basis/worker-runtime/stegfin-sovereign-trading-activation.json",
+      "task_class": "stegfin_sovereign_trading_activation",
+      "expected_completion_beats": 1,
+      "reason": "names no canonical task id, in task_id or in evidence_refs"
+    },
+    {
+      "cost_basis_record": "cost-basis/worker-runtime/steggate-rendezvous-deployment.json",
+      "task_class": "steggate_stable_rendezvous",
+      "expected_completion_beats": 1,
+      "reason": "names no canonical task id, in task_id or in evidence_refs"
+    },
+    {
+      "cost_basis_record": "cost-basis/worker-runtime/stegnutrition-machine-continuation.json",
+      "task_class": "stegnutrition_machine_continuation",
+      "expected_completion_beats": 1,
+      "reason": "names no canonical task id, in task_id or in evidence_refs"
+    },
+    {
+      "cost_basis_record": "cost-basis/worker-runtime/stegos-relay-node-kv-continuity.json",
+      "task_class": "stegos_relay_node_kv_continuity",
+      "expected_completion_beats": 8,
+      "reason": "names no canonical task id, in task_id or in evidence_refs"
+    },
+    {
+      "cost_basis_record": "cost-basis/worker-runtime/stegos-sovereign-relay-materialization.json",
+      "task_class": "stegos_sovereign_relay_materialization",
+      "expected_completion_beats": 8,
+      "reason": "names no canonical task id, in task_id or in evidence_refs"
+    },
+    {
+      "cost_basis_record": "cost-basis/worker-runtime/stegverse001-bounded-autonomy-runtime.json",
+      "task_class": "stegverse001_bounded_autonomy_runtime",
+      "expected_completion_beats": 2,
+      "reason": "names no canonical task id, in task_id or in evidence_refs"
+    },
+    {
+      "cost_basis_record": "cost-basis/worker-runtime/sv-dn1-intr-runtime.json",
+      "task_class": "sv_dn1_route_specific_intr",
+      "expected_completion_beats": 2,
+      "reason": "names no canonical task id, in task_id or in evidence_refs"
+    },
+    {
+      "cost_basis_record": "cost-basis/worker-runtime/sv-dn1-production-source-prep.json",
+      "task_class": "sv_dn1_production_source_prep",
+      "expected_completion_beats": 8,
+      "reason": "names no canonical task id, in task_id or in evidence_refs"
+    },
+    {
+      "cost_basis_record": "cost-basis/worker-runtime/sv-dn1-public-promotion.json",
+      "task_class": "sv_dn1_public_promotion",
+      "expected_completion_beats": 4,
+      "reason": "names no canonical task id, in task_id or in evidence_refs"
+    },
+    {
+      "cost_basis_record": "cost-basis/worker-runtime/sv-dn1-publication-observer.json",
+      "task_class": "sv_dn1_publication_observer",
+      "expected_completion_beats": 6,
+      "reason": "names no canonical task id, in task_id or in evidence_refs"
+    },
+    {
+      "cost_basis_record": "cost-basis/worker-runtime/sv-dn1-repository-merge-dispatch.json",
+      "task_class": "sv_dn1_repository_merge_dispatch",
+      "expected_completion_beats": 8,
+      "reason": "names no canonical task id, in task_id or in evidence_refs"
+    },
+    {
+      "cost_basis_record": "cost-basis/worker-runtime/sv-dn1-repository-persistence-dispatch.json",
+      "task_class": "sv_dn1_repository_persistence_dispatch",
+      "expected_completion_beats": 12,
+      "reason": "names no canonical task id, in task_id or in evidence_refs"
+    },
+    {
+      "cost_basis_record": "cost-basis/worker-runtime/sv-dn1-repository-persistence-package.json",
+      "task_class": "sv_dn1_repository_persistence_package",
+      "expected_completion_beats": 3,
+      "reason": "names no canonical task id, in task_id or in evidence_refs"
+    },
+    {
+      "cost_basis_record": "cost-basis/worker-runtime/sv-dn1-resident-observer.json",
+      "task_class": "sv_dn1_public_source_observation",
+      "expected_completion_beats": 4,
+      "reason": "names no canonical task id, in task_id or in evidence_refs"
+    },
+    {
+      "cost_basis_record": "cost-basis/worker-runtime/sv-dn1-sdk-first-round.json",
+      "task_class": "sv_dn1_sdk_first_round",
+      "expected_completion_beats": 12,
+      "reason": "names no canonical task id, in task_id or in evidence_refs"
+    },
+    {
+      "cost_basis_record": "cost-basis/worker-runtime/sv-dn1-source-materialization.json",
+      "task_class": "sv_dn1_exact_source_materialization",
+      "expected_completion_beats": 4,
+      "reason": "names no canonical task id, in task_id or in evidence_refs"
+    },
+    {
+      "cost_basis_record": "cost-basis/worker-runtime/sv002-public-observation-runtime.json",
+      "task_class": "sv002_public_observation_runtime",
+      "expected_completion_beats": 4,
+      "reason": "names no canonical task id, in task_id or in evidence_refs"
+    },
+    {
+      "cost_basis_record": "cost-basis/worker-runtime/test-lanes-autolaunch.json",
+      "task_class": "test_lanes_autolaunch",
+      "expected_completion_beats": 1,
+      "reason": "names no canonical task id, in task_id or in evidence_refs"
+    },
+    {
+      "cost_basis_record": "cost-basis/worker-runtime/tv-tvc-resident-proof.json",
+      "task_class": "tv_tvc_resident_operational_proof",
+      "expected_completion_beats": 8,
+      "reason": "names no canonical task id, in task_id or in evidence_refs"
+    },
+    {
+      "cost_basis_record": "cost-basis/worker-runtime/tvc-coinbase-intr-resident-activation.json",
+      "task_class": "tvc_intr_resident_activation",
+      "expected_completion_beats": null,
+      "reason": "names no canonical task id, in task_id or in evidence_refs"
+    },
+    {
+      "cost_basis_record": "cost-basis/worker-runtime/tvc-repository-broker-validation.json",
+      "task_class": "tvc_repository_broker_validation",
+      "expected_completion_beats": 8,
+      "reason": "names no canonical task id, in task_id or in evidence_refs"
+    },
+    {
+      "cost_basis_record": "cost-basis/worker-runtime/ungoverned-ai-defensive-envelope.json",
+      "task_class": "ungoverned_ai_defensive_envelope_runtime_probe",
+      "expected_completion_beats": 1,
+      "reason": "names no canonical task id, in task_id or in evidence_refs"
+    },
+    {
+      "cost_basis_record": "cost-basis/worker-runtime/universal-governance-enforced-reference.json",
+      "task_class": "universal_governance_enforced_reference_observation",
+      "expected_completion_beats": 4,
+      "reason": "names no canonical task id, in task_id or in evidence_refs"
+    }
+  ],
+  "cost_basis_unbound_count": 54,
+  "cost_basis_unbound_carrying_an_estimate": 42,
+  "cost_basis_linked_without_estimate": [
+    {
+      "cost_basis_record": "cost-basis/worker-runtime/conversation-evidence-ingestion-custody.json",
+      "tasks": [
+        "CONVERSATION-EVIDENCE-INGESTION-CUSTODY-001"
+      ]
+    }
+  ],
+  "tasks_total": 173,
+  "tasks_still_without_any_linked_estimate": 167,
+  "binding_is_not_inferrable": "No additional record binds under task_class normalisation: task_class values do not correspond to canonical task ids by name. The mapping must be authored by whoever knows which task each class serves."
+}
