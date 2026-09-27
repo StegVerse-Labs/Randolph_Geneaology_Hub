@@ -155,6 +155,96 @@ class TestValidatorPerTaskContract(unittest.TestCase):
         self.assertNotEqual(self.task["coordination_state"], "CLOSED")
 
 
+class TestExecutionSubstrateResolution(unittest.TestCase):
+    """Transcribed from StegVerse-Labs/.github:scripts/validate_task_registration_substrate_resolution.py.
+
+    That validator treats any record carrying a runtime_requirements dict as
+    runtime-capable and then requires execution_substrate_resolution. The first
+    delivery of this registration omitted the block and CI rejected it, so the
+    contract is pinned here rather than rediscovered in the registry.
+    """
+
+    REVIEW_ORDER = [
+        "STEG-BROWSER-RETAINED-RESIDENT-NODE",
+        "STEGOS-CURRENT-DEVICE-NODE",
+        "STEG-BROWSER-EPHEMERAL-LEASE",
+        "SAME-DEVICE-SITE-SAFARI-SERVICE-WORKER",
+        "ADMITTED-EPHEMERAL-STEGOS-NODE",
+        "REMOTE-OR-EXTERNAL-DEVICE-LAST-RESORT",
+    ]
+    DISPOSITIONS = {"SELECTED", "SUITABLE", "PENDING_EVIDENCE", "UNSUITABLE", "NOT_APPLICABLE"}
+    LIMITATIONS = {"NONE", "EVIDENCE_REACHABILITY", "ARCHITECTURAL", "AUTHORITY", "PLATFORM", "NOT_APPLICABLE"}
+
+    def setUp(self):
+        self.task = reg.build_task()
+        self.record = reg.build_record()
+        self.resolution = self.task["execution_substrate_resolution"]
+
+    def test_runtime_capable_record_carries_a_resolution(self):
+        """The exact condition the registry validator fails on."""
+        self.assertIsInstance(self.record.get("runtime_requirements"), dict)
+        self.assertIsInstance(self.record.get("execution_substrate_resolution"), dict)
+
+    def test_registry_row_and_record_carry_the_same_resolution(self):
+        """runtime_requirements was once on the record but not the row; do not repeat it."""
+        self.assertEqual(
+            self.task["execution_substrate_resolution"],
+            self.record["execution_substrate_resolution"],
+        )
+
+    def test_schema_is_exact(self):
+        self.assertEqual(
+            self.resolution["schema"], "stegverse.execution-substrate-resolution/v1"
+        )
+
+    def test_review_order_is_canonical_single_device_first(self):
+        self.assertEqual(self.resolution["review_order"], self.REVIEW_ORDER)
+
+    def test_resolution_mints_no_authority(self):
+        self.assertEqual(self.resolution["authority_effect"], "NONE")
+
+    def test_second_user_operated_device_is_not_allowed(self):
+        self.assertIs(self.resolution["second_user_operated_device_allowed"], False)
+
+    def test_external_device_is_not_required(self):
+        self.assertIsInstance(self.resolution["external_device_required"], bool)
+        self.assertIs(self.resolution["external_device_required"], False)
+
+    def test_one_review_per_substrate_in_canonical_order(self):
+        seen = [row["substrate_id"] for row in self.resolution["reviews"]]
+        self.assertEqual(seen, self.REVIEW_ORDER)
+
+    def test_dispositions_and_limitations_are_in_the_allowed_sets(self):
+        for row in self.resolution["reviews"]:
+            self.assertIn(row["disposition"], self.DISPOSITIONS)
+            self.assertIn(row["limitation_class"], self.LIMITATIONS)
+
+    def test_evidence_refs_are_string_arrays(self):
+        for row in self.resolution["reviews"]:
+            self.assertIsInstance(row["evidence_refs"], list)
+            for ref in row["evidence_refs"]:
+                self.assertIsInstance(ref, str)
+                self.assertTrue(ref.strip())
+
+    def test_nothing_is_selected_because_nothing_was_observed(self):
+        """No runtime observation exists, so no substrate can be shown suitable."""
+        self.assertIsNone(self.resolution["selected_substrate_id"])
+        self.assertEqual(
+            [r for r in self.resolution["reviews"] if r["disposition"] == "SELECTED"], []
+        )
+
+    def test_no_evidence_gap_is_promoted_to_unsuitable(self):
+        """The validator forbids it, and ruling a substrate out would be a claim."""
+        for row in self.resolution["reviews"]:
+            if row["limitation_class"] == "EVIDENCE_REACHABILITY":
+                self.assertNotEqual(row["disposition"], "UNSUITABLE")
+
+    def test_every_substrate_is_pending_evidence(self):
+        for row in self.resolution["reviews"]:
+            self.assertEqual(row["disposition"], "PENDING_EVIDENCE")
+            self.assertEqual(row["limitation_class"], "EVIDENCE_REACHABILITY")
+
+
 class TestGoalCoversEveryStatedProperty(unittest.TestCase):
     """The four properties, plus the invariant that governs them."""
 

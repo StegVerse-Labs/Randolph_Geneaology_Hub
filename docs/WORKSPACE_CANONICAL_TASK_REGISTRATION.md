@@ -1,7 +1,7 @@
 # Registering the WorkSpace canonical task
 
 Date: 2026-09-27
-Status: **built and validated here; delivery to the registry blocked on repository access.**
+Status: **delivered.** Applied to `StegVerse-Labs/.github` as PR #2792.
 Target repository: `StegVerse-Labs/.github`
 Basis: `docs/WORKSPACE_MYKV_SKAP_REGISTRY_REVIEW.md` §6–§9
 
@@ -21,9 +21,10 @@ authority: `worker_claim` is the canonical projection required by
 `TASK_REGISTRY_CANONICAL_INVARIANTS.md` when no authentic WorkerCoordinator
 claim or fence has been observed.
 
-## 2. Why it is not already in the registry
+## 2. Delivery: how the access constraint was cleared
 
-Both delivery paths were tested first-hand, not assumed:
+Both delivery paths below were tested first-hand from a session that had the
+Hub as its source repository. Neither worked:
 
 | Path | Result |
 | --- | --- |
@@ -31,10 +32,14 @@ Both delivery paths were tested first-hand, not assumed:
 | `add_repo` (the remedy the proxy names) | `repository name ".github" begins with '.', so its clone directory would be a hidden path … Repositories whose names begin with '.' cannot be attached to this session.` |
 | GitHub API (`get_file_contents`) | `Access denied: repository "stegverse-labs/.github" is not configured for this session` |
 
-Anonymous **read** works, which is how everything below was validated. Write
-does not, by either transport, and the one documented remedy is refused for this
-specific repository name. This is an environment constraint, not a permissions
-decision a reviewer can grant from inside the repo.
+Anonymous **read** works, which is how everything below was first validated.
+
+**The constraint turned out to be `add_repo`-specific, not absolute.** A session
+started with `StegVerse-Labs/.github` as its *source repository* receives the
+repo already attached with push credentials, so `add_repo` — and its leading-dot
+refusal — is never consulted. From such a session a dry-run push returns
+`* [new branch]` and exit 0, and the GitHub API tools reach the repo normally.
+That is how this registration was delivered.
 
 ## 3. Applying it
 
@@ -62,13 +67,13 @@ It writes four surfaces, because the registry keeps a task in four places:
 Applied to a clean worktree of `.github` at `origin/main` `495832cd`, then the
 registry's own checkers were run.
 
-**The three validators that execute in CI all pass:**
+**Two of the three validators pass. The third's original exit 0 was a false pass:**
 
 | Validator | Result |
 | --- | --- |
-| `scripts/validate_task_registration_substrate_resolution.py` | exit 0 |
 | `scripts/validate_four_missing_cosv_tracking.py` | exit 0 |
 | `scripts/audit_canonical_task_projections.py` | exit 0, `structural_errors: []` |
+| `scripts/validate_task_registration_substrate_resolution.py` | exit 0 **only because it checked nothing** — see §5.4 |
 
 **Every per-task requirement of the strict validator passes.** Running
 `scripts/validate_canonical_work_coordination.py` against the new task in
@@ -138,6 +143,45 @@ registry-owner decision per record, and this session cannot deliver it anyway.
 
 This is the same shape as every other defect found in this ecosystem today: the
 rule is written down, the checker exists, and nothing runs it.
+
+### 5.4 A validator that scopes itself to changed records can pass vacuously
+
+`validate_task_registration_substrate_resolution.py` inspects only the records
+that `git diff --diff-filter=AM <base> HEAD` reports as changed. Run against a
+working tree where the new record is still **untracked**, the diff returns
+nothing, and it prints `TASK_REGISTRATION_SUBSTRATE_RESOLUTION_NO_CHANGED_RECORDS`
+and exits 0 having validated nothing. §4's original exit 0 was that, not a pass.
+
+CI runs it against a committed merge commit, so it saw the record and rejected it:
+
+```
+ERROR: data/canonical-task-records/STEGVERSE-WORKSPACE-ANY-DEVICE-KV-SURFACE-001.json:
+STEGVERSE-WORKSPACE-ANY-DEVICE-KV-SURFACE-001: runtime-capable task registration
+requires execution_substrate_resolution
+```
+
+The rule: any record carrying a `runtime_requirements` **dict** is runtime-capable
+and must also carry `execution_substrate_resolution`. This registration carries
+`runtime_requirements` precisely because `validate_canonical_work_coordination.py`
+demands it per task, so satisfying one validator tripped the other.
+
+`register_workspace_canonical_task.py` now emits the block, and
+`TestExecutionSubstrateResolution` pins it. Every substrate is
+`PENDING_EVIDENCE` / `EVIDENCE_REACHABILITY`, nothing is `SELECTED`, and no
+external device is required — the honest encoding for a task with no runtime
+observation, and the validator itself forbids promoting an evidence gap to
+`UNSUITABLE`.
+
+Two notes for a registry owner. First, the disposition set is a judgment call:
+all-`PENDING_EVIDENCE` asserts nothing, but someone who knows WorkSpace may
+consider a substrate `NOT_APPLICABLE`. Second, 38 of the 84 existing records
+with a `runtime_requirements` dict carry no `execution_substrate_resolution` at
+all. They pass only because the validator scopes itself to changed records, so
+they are grandfathered — the same vacuous-pass mechanism, standing.
+
+To verify the block locally rather than vacuously, **commit first**, then run
+the validator with an explicit base: `--base-ref main`. A real check reports
+`TASK_REGISTRATION_SUBSTRATE_RESOLUTION_PASS count=1`.
 
 ## 6. The task's own content
 
@@ -220,5 +264,5 @@ rather than buried.
   owner its `task_id` never resolved to, and its own
   `next_task_after_release` names this task's WU1.
 - **It does not fix the 48 failing `worker_claim` records**, the unpassable
-  validator, or wire that validator into CI. Each is a registry-owner decision,
-  and none is deliverable from here.
+  validator, or wire that validator into CI. Each is a registry-owner decision
+  per record, and none is in this registration's scope.

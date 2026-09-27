@@ -380,6 +380,42 @@ RUNTIME_REQUIREMENTS = {
     "second_operating_system_required_for_evidence_completion": True,
 }
 
+CANONICAL_SUBSTRATE_REVIEW_ORDER = [
+    "STEG-BROWSER-RETAINED-RESIDENT-NODE",
+    "STEGOS-CURRENT-DEVICE-NODE",
+    "STEG-BROWSER-EPHEMERAL-LEASE",
+    "SAME-DEVICE-SITE-SAFARI-SERVICE-WORKER",
+    "ADMITTED-EPHEMERAL-STEGOS-NODE",
+    "REMOTE-OR-EXTERNAL-DEVICE-LAST-RESORT",
+]
+
+# scripts/validate_task_registration_substrate_resolution.py treats any record
+# carrying a runtime_requirements dict as runtime-capable and then requires this
+# block. Every substrate is PENDING_EVIDENCE/EVIDENCE_REACHABILITY because no
+# runtime observation of WorkSpace exists: nothing has been run against a live
+# KV, browser or device, so no substrate can be shown suitable and none can be
+# ruled out. The validator itself forbids promoting an evidence/reachability gap
+# to UNSUITABLE, which is exactly this situation. Nothing is SELECTED and no
+# external device is required, so the block mints no execution authority and is
+# consistent with coordination_state PROPOSED / checkout_state UNCLAIMED.
+EXECUTION_SUBSTRATE_RESOLUTION = {
+    "schema": "stegverse.execution-substrate-resolution/v1",
+    "authority_effect": "NONE",
+    "second_user_operated_device_allowed": False,
+    "external_device_required": False,
+    "selected_substrate_id": None,
+    "review_order": CANONICAL_SUBSTRATE_REVIEW_ORDER,
+    "reviews": [
+        {
+            "substrate_id": substrate_id,
+            "disposition": "PENDING_EVIDENCE",
+            "limitation_class": "EVIDENCE_REACHABILITY",
+            "evidence_refs": [],
+        }
+        for substrate_id in CANONICAL_SUBSTRATE_REVIEW_ORDER
+    ],
+}
+
 NONCLAIMS = [
     "REGISTRATION_IS_COORDINATION_INTENT_ONLY_AND_GRANTS_NO_EXECUTION_AUTHORITY",
     "NO_WORKERCOORDINATOR_CLAIM_OR_FENCE_IS_ASSERTED_BY_THIS_REGISTRATION",
@@ -447,6 +483,7 @@ def build_task() -> dict:
         "blockers": BLOCKERS,
         "dependencies": DEPENDENCIES,
         "runtime_requirements": RUNTIME_REQUIREMENTS,
+        "execution_substrate_resolution": EXECUTION_SUBSTRATE_RESOLUTION,
         "adjacent_task_refs": ADJACENT_TASK_REFS,
         "expected_evidence_predicates": EXPECTED_EVIDENCE_PREDICATES,
         "source_refs": SOURCE_REFS,
