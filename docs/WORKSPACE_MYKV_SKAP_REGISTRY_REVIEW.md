@@ -18,6 +18,24 @@ reach.
 
 ---
 
+## 0. Correction to this document's weighting (2026-09-27, added after merge)
+
+§4 of this review lists "precise and consistent across any browser session on
+any device" as the fourth of four properties, and calls the device-registration
+gate an effect that "contradicts P4" while noting it is not a clean invariant
+violation.
+
+**That weighting is wrong, and §9 replaces it.** The stated expectation for
+WorkSpace is:
+
+> Anyone on any device should be able to use every part of StegVerse. Mobile
+> WorkSpace: **any OS, any device.**
+
+That is not the fourth property. It is the invariant the other three serve, and
+it is the reason the reviewer of this document works from an iPhone only —
+dogfooding the invariant by refusing the escape hatch. Read §9 before acting on
+§4's ordering. §4's findings stand; only its priority was wrong.
+
 ## 1. Headline
 
 **WorkSpace is not a registered canonical task, and what is built is read-only
@@ -487,3 +505,140 @@ These are registry-owner calls, recorded rather than assumed:
 - **No runtime observation is claimed.** Nothing here was executed against a
   live KV; the only execution was `continuity-vault-kit`'s own WorkSpace test
   suite (4 passed).
+
+
+---
+
+## 9. The governing invariant: any OS, any device
+
+Added 2026-09-27 after the review merged, on the stated expectation above. All
+counts computed against the same registry snapshot (generation 260,
+`.github` `origin/main` `495832cd`) and the same `Site` checkout (`16b99c34`).
+
+### 9.1 The registry contradicts the invariant 28 to 6
+
+Tasks classified by how they scope the device:
+
+| Scoping | Count |
+| --- | --- |
+| Scoped to a **specific** device (`current-iPhone`, `sovereign single-device`, `same-device`, `one current device`) | **28** |
+| Asserting device **interchangeability** | **6** |
+| Both | 2 |
+
+The 6 asserting interchangeability: `ECOSYSTEM-INGRESS-AI-BOUNDARIES-001`,
+`TASK-REGISTRY-SOVEREIGN-KV-EVENT-CUSTODY-001`, `SS-KV-SKAP-SOCIAL-RELEASE-001`,
+`STEG-BROWSER-CURRENT-IPHONE-A1-A4-EXECUTION-001`,
+`STEGOS-AI-PREEXECUTION-RUNTIME-PROOF-001`,
+`TVC-RECIPIENT-ADMISSION-OPAQUE-SIGNER-BACKEND-001`.
+
+Two of those six — `STEG-BROWSER-CURRENT-IPHONE-A1-A4-EXECUTION-001` and
+`STEGOS-AI-PREEXECUTION-RUNTIME-PROOF-001` — are also in the 28. A task can be
+device-specific in its proof and interchangeable in its claim, which is exactly
+the tension this section is about.
+
+**The doctrine is not the problem.** `TASK-REGISTRY-KV-SKAP-VERIFIER-NODE-INVARIANT-001`
+already states `stegos_device_role: INTERCHANGEABLE_TRANSPORT_NODE`,
+`physical_device_identity_gate: NONE_PROHIBITED`, and
+`device_interchangeability`: "Replacing one eligible StegOS device/node with
+another does not change the user's verifier."
+
+So the invariant is written down and the task population contradicts it almost
+five to one. Every task that proves something on *one* phone proves it in a way
+that does not transfer — which is the failure mode the invariant exists to
+prevent.
+
+### 9.2 "Any OS" currently means one OS
+
+Registry tasks naming an operating system or platform:
+
+| Platform | Tasks |
+| --- | --- |
+| Apple — iOS / iPhone / Safari / Secure Enclave / TestFlight / App Store | **6** |
+| Android / Play Store | **0** |
+| Windows | **0** |
+| Linux | **0** |
+| macOS / desktop | 1 |
+
+The six Apple tasks: `CRYPTO-LIVE-AUTO-001`, `SS-EVIDENCE-COMPARISON-001`,
+`MYKV-NATIVE-IOS-PACKAGING-DISTRIBUTION-001`,
+`STEGOS-DEVICE-KV-SKAP-ROUNDTRIP-001`,
+`TVC-IOS-OPAQUE-RECIPIENT-CAPABILITY-001`,
+`TVC-RECIPIENT-ADMISSION-OPAQUE-SIGNER-BACKEND-001`.
+
+The code matches the registry. `Site` carries `assets/stegos-apple/` and
+`stegos-apple-credential.html`; there is no `assets/stegos-android/` and no
+Android or Windows equivalent of either. Five asset modules carry
+WebKit/Safari-specific branches.
+
+This is not an argument against the Apple work — a sovereign credential path has
+to start on some platform, and Secure Enclave is a reasonable place to start.
+It is an argument that **"any OS" is currently unregistered as a goal.** Nothing
+in the registry commits to a second platform, so nothing will fail if one never
+arrives.
+
+### 9.3 WorkSpace's identity lives in the storage iOS deletes first
+
+Traced specifically because the invariant is being dogfooded from an iPhone.
+
+The chain: `Site:assets/workspace-kv-bridge.js:45` requires
+`node.status().registered===true` → registration is stored in device-local
+**IndexedDB** (`META` object store, key `registration`, in
+`assets/stegverse-node-continuity-impl.js`) → absent it throws
+`REGISTER_DEVICE_REQUIRED`.
+
+**There is exactly one `navigator.storage.persist()` call in all of `Site`** —
+the API that asks a browser not to evict — in `assets/device-local-kv-installer.js`,
+which is loaded by exactly two pages — `device-kv-install.html` and
+`cloud-kv-peers.html`. **WorkSpace is not one of them.** Neither does
+`workspace.html`'s script chain, which loads
+`stegos-node-idb-schema-compat.js`, `stegos-bootstrap-impl.js`,
+`device-local-autostart.js`, `stegverse-node-continuity-impl.js` and
+`stegos-resident-health.js` — none of which request persistence.
+
+Why that lands hardest on the platform being dogfooded: WebKit's documented
+policy caps script-writable storage — IndexedDB, `localStorage`, service worker
+registrations, Cache API — and deletes it after **7 days** without first-party
+user interaction. This is stated as WebKit's published policy, **not** as an
+observed failure on a specific device; it has not been tested against a live
+phone here, and confirming it is a one-session runtime observation that would
+settle the point.
+
+If it holds, the consequence is worse than "a new device has no WorkSpace":
+**the registered device loses its own node identity** after a week of not
+opening the site, and recovery means re-registering and minting a new
+Receipt #1. Every receipt lineage anchored to the old `node_id` is then
+anchored to an identity the device no longer holds.
+
+The nearest thing to an escape is
+`assets/my-kv-portable-installation-bridge.js`, and it stores its proof in
+`localStorage` — the same eviction class, the same origin, the same browser. It
+does not survive eviction and it does not cross devices.
+
+### 9.4 What the invariant actually requires
+
+Stated as properties, not as a plan, because registering the work is a
+registry-owner action (§7):
+
+1. **No user-visible state may have its root of truth in script-writable
+   browser storage.** IndexedDB and `localStorage` are a cache of an admitted
+   projection, never the projection's authority. Today the node registration is
+   the authority.
+2. **A node registration must be recoverable on a device that has never held
+   one**, without minting a new identity, or `node_id` is a device identity gate
+   in effect whatever the doctrine says.
+3. **Receipt lineage must survive re-registration**, or eviction silently breaks
+   every reconstruction proof anchored to the evicted `node_id`.
+4. **At least one non-Apple platform must be a registered goal**, or "any OS"
+   is a statement no task can fail to meet.
+5. **`navigator.storage.persist()` is a mitigation, not a fix** — it is
+   advisory, the browser may refuse, and WebKit grants it on its own heuristics.
+   It belongs in the WorkSpace path regardless, and it does not discharge (1).
+
+### 9.5 Where this leaves §4
+
+§4's P4 row reads "gated on per-browser IndexedDB node registration", which is
+accurate. What it got wrong was calling that an effect short of an invariant
+violation. Against the stated expectation — anyone, any OS, any device — a
+surface that cannot be opened on an unregistered device is not a surface with a
+gap. It does not meet its governing invariant, and the person who stated the
+invariant is among the people it excludes.
