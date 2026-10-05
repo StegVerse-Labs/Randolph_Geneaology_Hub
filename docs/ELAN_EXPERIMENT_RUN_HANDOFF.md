@@ -86,7 +86,11 @@ This was called directly in the container. It did **not** enter or leave through
 5. **Remove Master Records from the governance path** (owner's rule). Remove the
    custody write from the governance route, and remove the
    `organization_master_records_closure_observed` requirement from the SDK's
-   governance result validator.
+   governance result validator. **Org records only:** the governance decision is
+   recorded in `StegVerse-org/.github`'s own ledgers, which the ingress already
+   writes in order (`.stegverse/transition-ledger/emit.py::append` for the
+   repository receipt, then `resident-runtime/aggregate_repo_transition.py::append`
+   for the organization receipt), and nowhere else.
 
 All organization ingress and egress goes through `StegVerse-org/.github`. Then
 run the declaration through the chain and report T0's actual disposition.
