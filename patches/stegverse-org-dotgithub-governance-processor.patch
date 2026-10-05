@@ -1,0 +1,1057 @@
+From 183fa7e8418a354246d7838d38e960b4ca4cd0aa Mon Sep 17 00:00:00 2001
+From: Claude <noreply@anthropic.com>
+Date: Mon, 5 Oct 2026 22:04:47 +0000
+Subject: [PATCH] wip
+
+---
+ .github/workflows/org-runtime-boundary.yml    |  4 +-
+ .../sdk-manifest-crossing-validation.yml      |  8 +-
+ org-boundary/registry/services.json           | 17 ++++
+ resident-runtime/governance_endpoint.py       | 72 +++++++++++++++++
+ .../organization_manifest_ingress.py          | 34 +++++++-
+ resident-runtime/sdk_manifest_crossing.py     | 20 ++++-
+ tests/fixtures/sdk-manifest-build-spec.json   | 58 ++++++--------
+ ...=> governance-to-boundary-diagnostic.json} | 67 +++++++---------
+ ...er.json => governance-to-llm-adapter.json} | 67 +++++++---------
+ ...sk-registry-disclosure-to-llm-adapter.json | 25 ++----
+ tests/test_boundary_processing_selection.py   | 14 ++--
+ tests/test_sdk_manifest_crossing.py           | 77 ++++++++-----------
+ tests/test_sdk_manifest_crossing_fidelity.py  | 14 ++--
+ 13 files changed, 276 insertions(+), 201 deletions(-)
+ create mode 100644 resident-runtime/governance_endpoint.py
+ rename tests/fixtures/sdk-manifests/{hold-to-boundary-diagnostic.json => governance-to-boundary-diagnostic.json} (62%)
+ rename tests/fixtures/sdk-manifests/{hold-to-llm-adapter.json => governance-to-llm-adapter.json} (62%)
+
+diff --git a/.github/workflows/org-runtime-boundary.yml b/.github/workflows/org-runtime-boundary.yml
+index 4910af3..874fce0 100644
+--- a/.github/workflows/org-runtime-boundary.yml
++++ b/.github/workflows/org-runtime-boundary.yml
+@@ -97,14 +97,14 @@ jobs:
+       - name: Carry a declared SDK manifest across the boundary end-to-end
+         run: |
+           python resident-runtime/sdk_manifest_crossing.py \
+-            --manifest tests/fixtures/sdk-manifests/hold-to-boundary-diagnostic.json \
++            --manifest tests/fixtures/sdk-manifests/governance-to-boundary-diagnostic.json \
+             --standing tests/fixtures/crossing-standing-genesis.json \
+             --packet-id ci-sdk-manifest-crossing --out /tmp/sdk-crossing.json
+           python -c 'import json; x=json.load(open("/tmp/sdk-crossing.json")); assert x["crossing_completed"] is True; assert x["consumed"] is True; assert x["reconstruction"]=="RECONSTRUCTED"; assert x["authority_effect"]=="NONE"; assert len(x["receipts"])==5'
+       - name: An installed far side still refuses a pair it does not admit
+         run: |
+           python resident-runtime/sdk_manifest_crossing.py \
+-            --manifest tests/fixtures/sdk-manifests/hold-to-llm-adapter.json \
++            --manifest tests/fixtures/sdk-manifests/governance-to-llm-adapter.json \
+             --standing tests/fixtures/crossing-standing-genesis.json \
+             --packet-id ci-sdk-manifest-crossing-gap --out /tmp/sdk-crossing-gap.json || true
+           python -c 'import json; x=json.load(open("/tmp/sdk-crossing-gap.json")); assert x["crossing_completed"] is False; assert x["resolved_service_id"]=="stegverse-org.llm-adapter"; assert x["endpoint_adapter_installed"] is True; assert isinstance(x["far_side_disposition"],str) and x["far_side_disposition"].strip(), "a refused crossing must name its disposition"'
+diff --git a/.github/workflows/sdk-manifest-crossing-validation.yml b/.github/workflows/sdk-manifest-crossing-validation.yml
+index 0fc1f30..61283d9 100644
+--- a/.github/workflows/sdk-manifest-crossing-validation.yml
++++ b/.github/workflows/sdk-manifest-crossing-validation.yml
+@@ -3,8 +3,8 @@ name: Validate SDK Manifest Crossing of the Organization Boundary
+ # Nothing in the ecosystem exercised SDK output and boundary transport together.
+ # The SDK gated its manifests, this boundary gated its crossing, and the join
+ # between them was gated by nothing -- so a change on either side could break
+-# it while every check on both sides stayed green. That is exactly how the HOLD
+-# experiment came to declare a far side that nothing could reach.
++# it while every check on both sides stayed green. That is how SDK manifests
++# came to declare a far side that nothing could reach.
+ #
+ # This job installs the SDK at a pinned commit, rebuilds the committed manifest
+ # fixtures from their build spec, proves they are byte-for-byte what the SDK
+@@ -81,7 +81,7 @@ jobs:
+           builder = load("build", "tests/fixtures/sdk_manifest_fixture_build.py")
+           bridge = load("crossing", "resident-runtime/sdk_manifest_crossing.py")
+ 
+-          manifest = builder.rebuild()["hold-to-boundary-diagnostic"]
++          manifest = builder.rebuild()["governance-to-boundary-diagnostic"]
+           # An ingress manifest declares no chain position, so the crossing is
+           # given one. There is no default: a crossing with no standing fails
+           # closed at the boundary.
+@@ -104,7 +104,7 @@ jobs:
+       - name: An installed far side still refuses a pair it does not admit
+         run: |
+           python resident-runtime/sdk_manifest_crossing.py \
+-            --manifest tests/fixtures/sdk-manifests/hold-to-llm-adapter.json \
++            --manifest tests/fixtures/sdk-manifests/governance-to-llm-adapter.json \
+             --standing tests/fixtures/crossing-standing-genesis.json \
+             --packet-id ci-sdk-manifest-crossing-gap --out /tmp/gap.json || true
+           python -c 'import json; x=json.load(open("/tmp/gap.json")); assert x["crossing_completed"] is False; assert x["resolved_service_id"]=="stegverse-org.llm-adapter"; assert x["endpoint_adapter_installed"] is True, "this step now covers an installed adapter refusing an unadmitted pair"; assert isinstance(x["far_side_disposition"],str) and x["far_side_disposition"].strip(), "a refused crossing must name its disposition"; print("UNADMITTED_PAIR_REFUSED_AT_INSTALLED_FAR_SIDE=PASS")'
+diff --git a/org-boundary/registry/services.json b/org-boundary/registry/services.json
+index e85b220..f1c2d4c 100644
+--- a/org-boundary/registry/services.json
++++ b/org-boundary/registry/services.json
+@@ -178,6 +178,23 @@
+       "boundary_role": "INTERNAL_ENDPOINT",
+       "profile_status": "NEEDS_REPOSITORY_HANDOFF_RECONCILIATION",
+       "runtime_required_for_consumption": true
++    },
++    {
++      "service_id": "stegverse-org.governance",
++      "repository": "StegVerse-org/.github",
++      "boundary_role": "INTERNAL_ENDPOINT",
++      "profile_status": "ACTIVE",
++      "runtime_required_for_consumption": true,
++      "endpoint_adapter": "resident-runtime/governance_endpoint.py",
++      "admits_processing": [
++        {
++          "capability": "governance",
++          "route_id": "stegverse.route.canonical-governed.v1"
++        }
++      ],
++      "accepts": [
++        "stegverse.sdk-manifest-crossing-payload/v1"
++      ]
+     }
+   ],
+   "boundary_rule": "All organization-crossing communication is generated by this .github boundary using Interlock/InTr; endpoint authority remains transition-governed."
+diff --git a/resident-runtime/governance_endpoint.py b/resident-runtime/governance_endpoint.py
+new file mode 100644
+index 0000000..e6e042b
+--- /dev/null
++++ b/resident-runtime/governance_endpoint.py
+@@ -0,0 +1,72 @@
++#!/usr/bin/env python3
++"""`stegverse-org.governance` -- decide a governance manifest that crossed InTr.
++
++The organization registry admitted no service for `governance`, so a governance
++manifest had nowhere to be processed: it was either handed to the transport its
++return surface names (`LLM_ADAPTER`, refused) or echoed by a boundary-local
++diagnostic (crossed, never decided). This is the processor.
++
++It evaluates the governance request the manifest carries with StegCore's
++StegGate and returns the disposition. It records nothing itself: the receiving
++operation writes the decision to this organization's own ledgers.
++"""
++from __future__ import annotations
++
++import argparse
++import hashlib
++import json
++from pathlib import Path
++
++SERVICE_ID = "stegverse-org.governance"
++REQUEST_EXTENSION = "stegverse_governance_request"
++
++
++def canon(v):
++    return json.dumps(v, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode()
++
++
++def main() -> int:
++    ap = argparse.ArgumentParser()
++    ap.add_argument("--envelope", type=Path, required=True)
++    ap.add_argument("--out", type=Path, required=True)
++    a = ap.parse_args()
++    packet = json.loads(a.envelope.read_text())
++    if (packet.get("destination") or {}).get("service") != SERVICE_ID:
++        raise SystemExit("wrong-governance-destination")
++    manifest = (packet.get("payload") or {}).get("manifest")
++    if not isinstance(manifest, dict):
++        raise SystemExit("governance-manifest-missing")
++    processing = manifest.get("processing") or {}
++    if processing.get("capability") != "governance":
++        raise SystemExit("governance-endpoint-received-other-capability:" + str(processing.get("capability")))
++    request = (manifest.get("extensions") or {}).get(REQUEST_EXTENSION)
++    if not isinstance(request, dict):
++        raise SystemExit("governance-request-missing")
++
++    result = {
++        "schema": "stegverse.org-governance-decision/v1",
++        "service_id": SERVICE_ID,
++        "decision_authority": "stegcore.steggate.evaluate_admissibility",
++        "governance_request_sha256": hashlib.sha256(canon(request)).hexdigest(),
++        "external_side_effect": False,
++        "authority_effect": "NONE_DECISION_ONLY",
++    }
++    try:
++        from stegcore.steggate import AdmissibilityRequest, evaluate_admissibility
++    except ImportError:
++        # No decision can be made without the canonical evaluator, and none is
++        # substituted. The run is decided FAIL_CLOSED and says why.
++        result.update({"disposition": "FAIL_CLOSED", "reason": "GOVERNANCE_RUNTIME_STEGCORE_UNAVAILABLE",
++                       "evaluation": None})
++    else:
++        body = evaluate_admissibility(AdmissibilityRequest(**request)).model_dump(mode="json")
++        result.update({"disposition": body.get("disposition"),
++                       "reason": body.get("canonical_three_layer_reason"),
++                       "evaluation": body})
++    a.out.parent.mkdir(parents=True, exist_ok=True)
++    a.out.write_text(json.dumps(result, indent=2, sort_keys=True) + "\n")
++    return 0
++
++
++if __name__ == "__main__":
++    raise SystemExit(main())
+diff --git a/resident-runtime/organization_manifest_ingress.py b/resident-runtime/organization_manifest_ingress.py
+index 77008ab..26a5cb7 100644
+--- a/resident-runtime/organization_manifest_ingress.py
++++ b/resident-runtime/organization_manifest_ingress.py
+@@ -333,7 +333,8 @@ def transition_evidence(request: Mapping[str, Any], crossing: Mapping[str, Any],
+ 
+ 
+ def runtime_result(request: Mapping[str, Any], closures: list[dict[str, Any]],
+-                   organization_receipt: Mapping[str, Any]) -> dict[str, Any]:
++                   organization_receipt: Mapping[str, Any],
++                   decision: Mapping[str, Any] | None = None) -> dict[str, Any]:
+     """What this organization observed, in the shape the SDK validates.
+ 
+     `manifest_receipt_id` is the organization receipt's own digest. The receipt
+@@ -354,6 +355,34 @@ def runtime_result(request: Mapping[str, Any], closures: list[dict[str, Any]],
+         "reconstruction_status": "PASS",
+         "terminal_state": {"records_only": True, "continued_authority": False},
+         "manifest_receipt_id": organization_receipt["receipt_sha256"],
++        **governance_fields(request, decision),
++    }
++
++
++def governance_fields(request: Mapping[str, Any], decision: Mapping[str, Any] | None) -> dict[str, Any]:
++    """The governance decision, in the shape the SDK admits, recorded in org records only.
++
++    Only a governance request carries a decision. The disposition is the one the
++    organization's governance endpoint returned; nothing here grades it.
++    """
++    if request.get("processing_capability") != "governance":
++        return {}
++    disposition = (decision or {}).get("disposition")
++    if disposition not in {"ALLOW", "DENY", "FAIL_CLOSED"}:
++        disposition = "FAIL_CLOSED"
++    return {
++        "disposition": disposition,
++        "state": "COMPLETE" if disposition == "ALLOW" else disposition,
++        "terminal": disposition != "ALLOW",
++        "communication_terminal": False,
++        "failed_predicate": None if disposition == "ALLOW" else (
++            (decision or {}).get("reason") or "GOVERNANCE_DECISION_ABSENT"),
++        "governance_decision": dict(decision) if decision else None,
++        "request_sha256": request["request_sha256"],
++        "wire_manifest_sha256": request["wire_manifest_sha256"],
++        "records_authority": "ORGANIZATION_RECORDS_ONLY",
++        "publisher_executed": False,
++        "site_propagation_executed": False,
+     }
+ 
+ 
+@@ -425,7 +454,8 @@ def receive(manifest: Mapping[str, Any], *, standing: Mapping[str, Any] | None =
+     # answer, returned as it was given.
+     try:
+         admitted = admit_runtime_result(
+-            manifest, request, runtime_result(request, closures, organization_receipt))
++            manifest, request, runtime_result(request, closures, organization_receipt,
++                           crossing.get("application_result")))
+     except ValueError as exc:
+         return {
+             "schema": RESULT_SCHEMA_ORG,
+diff --git a/resident-runtime/sdk_manifest_crossing.py b/resident-runtime/sdk_manifest_crossing.py
+index 7d21619..2d249ab 100644
+--- a/resident-runtime/sdk_manifest_crossing.py
++++ b/resident-runtime/sdk_manifest_crossing.py
+@@ -149,11 +149,28 @@ def crossing_packet(manifest, destination, service, registry, origin, packet_id,
+     return {**envelope, "standing": standing}
+ 
+ 
++def processing_service(manifest, registry):
++    """The one service admitting the manifest's declared capability and route, or None.
++
++    Processing is selected by what the manifest declares, never by the surface
++    its result returns to: `completion.egress` names the return path, and
++    addressing that service for processing hands a governance manifest to the
++    transport that will carry its answer back.
++    """
++    processing = manifest.get("processing") or {}
++    declared = {"capability": processing.get("capability"), "route_id": processing.get("route_id")}
++    matches = [service for service in registry.get("services", [])
++               if declared in (service.get("admits_processing") or [])]
++    if len(matches) > 1:
++        raise SystemExit("PROCESSING_AMBIGUOUS_IN_REGISTRY:" + str(declared["capability"]))
++    return matches[0] if matches else None
++
++
+ def cross(manifest, *, origin=None, packet_id="sdk-manifest-crossing", standing=None):
+     """Drive the manifest's declared crossing and return what it produced."""
+     registry = load(REGISTRY)
+     destination = declared_destination(manifest)
+-    service = resolve_surface(destination["surface"], registry)
++    service = processing_service(manifest, registry) or resolve_surface(destination["surface"], registry)
+     origin = origin or {"org": "StegVerse-org", "service": "stegverse-org.stegverse-sdk"}
+     resolved_standing = manifest_standing(manifest, standing)
+     ingress = crossing_packet(manifest, destination, service, registry, origin, packet_id,
+@@ -208,6 +225,7 @@ def cross(manifest, *, origin=None, packet_id="sdk-manifest-crossing", standing=
+         "egress_packet_id": egress["packet_id"],
+         "egress": egress,
+         "authority_effect": result.get("authority_effect", "NONE"),
++        "application_result": result.get("application_result"),
+         **{field: result[field] for field in SELECTION_FIELDS if field in result},
+     }
+ 
+diff --git a/tests/fixtures/sdk-manifest-build-spec.json b/tests/fixtures/sdk-manifest-build-spec.json
+index 39c5786..05e2115 100644
+--- a/tests/fixtures/sdk-manifest-build-spec.json
++++ b/tests/fixtures/sdk-manifest-build-spec.json
+@@ -2,14 +2,14 @@
+   "_comment": "The exact build_manifest arguments these fixtures were produced from. Committing the inputs, not just the output, is what lets a workflow with the SDK installed rebuild the fixtures and prove they are still what the SDK actually produces.",
+   "common": {
+     "created_at": "2026-09-26T00:00:00Z",
+-    "data_class": "sv.hold.independent.source-only.v1",
+-    "declared_intent": "Independently qualify a proposed governed HOLD transition",
++    "data_class": "sv.governance.crossing-fixture.v1",
++    "declared_intent": "Carry a governance manifest across the organization boundary",
+     "process": "governance",
+     "publisher_required": false,
+-    "requested_consequence": "Observe actual disposition and protected effect only if genuinely admitted",
++    "requested_consequence": "Observe the governance disposition only if genuinely admitted",
+     "return_depth": "full-trace",
+-    "source_framework": "StegVerse-independent-evaluator",
+-    "source_output_id": "SV-HOLD-INDEPENDENT-BASELINE-20260926:HOLD_ENTERED"
++    "source_framework": "StegVerse-org-boundary-fixture",
++    "source_output_id": "GOVERNANCE-CROSSING-FIXTURE-001"
+   },
+   "data": {
+     "authority_declaration": {
+@@ -19,26 +19,15 @@
+       "permission_present": false,
+       "validity_window_open": true
+     },
+-    "condition_id": "HOLD_ENTERED",
+-    "evidence_class": "INDEPENDENT_SV_EXPERIMENT_DESIGN_NOT_NATIVE_RUNTIME",
+-    "expected_evidence": [
+-      "actual_intr_admissibility_snapshot",
+-      "original_protected_operation_effect_or_prevention",
+-      "predecessor_linked_organization_receipts",
+-      "applicable_master_records_reconstruction"
+-    ],
+-    "experiment_id": "SV-HOLD-INDEPENDENT-BASELINE-20260926",
+-    "native_stev_inference": null,
+-    "other_framework_output_consumed": false,
+-    "protected_operation": "bounded_no_external_side_effect_test",
+-    "relative_time": "T1",
+-    "temporal_sampling": "EXPERIMENT_RELATIVE_ONLY_NOT_MEASURED"
++    "external_side_effect": false,
++    "fixture_id": "GOVERNANCE-CROSSING-FIXTURE-001",
++    "purpose": "boundary crossing of a governance manifest that carries no authenticated grant"
+   },
+   "manifests": {
+-    "hold-to-boundary-diagnostic": {
++    "governance-to-boundary-diagnostic": {
+       "egress_surface": "BOUNDARY_DIAGNOSTIC"
+     },
+-    "hold-to-llm-adapter": {
++    "governance-to-llm-adapter": {
+       "egress_surface": "LLM_ADAPTER"
+     },
+     "task-registry-disclosure-to-llm-adapter": {
+@@ -74,14 +63,13 @@
+       "required": true
+     },
+     "candidate": {
+-      "action": "evaluate_bounded_hold_operation",
++      "action": "evaluate_governance_crossing_fixture",
+       "actor_class": "sdk_evaluator",
+       "parameters": {
+-        "external_side_effect": false,
+-        "relative_time": "T1"
++        "external_side_effect": false
+       },
+-      "scope": "isolated_experiment",
+-      "target": "SV-HOLD-INDEPENDENT-BASELINE-20260926:HOLD_ENTERED"
++      "scope": "isolated_fixture",
++      "target": "GOVERNANCE-CROSSING-FIXTURE-001"
+     },
+     "capability": {
+       "allowed": true
+@@ -91,10 +79,8 @@
+     },
+     "declared_context": {
+       "authority_evidence_status": "NOT_AUTHENTICATED",
+-      "condition_id": "HOLD_ENTERED",
+       "no_external_effect": true,
+       "other_framework_evidence_used": false,
+-      "relative_time": "T1",
+       "semantic_status": "UNRESOLVED",
+       "source_only": true
+     },
+@@ -102,19 +88,19 @@
+       "actor_authority_current": false,
+       "affected_entity_conditions_represented": true,
+       "delegation_current": false,
+-      "delegation_ref": "sv-hold:proposed-test-delegation:not-runtime-authenticated",
++      "delegation_ref": "fixture:delegation:not-runtime-authenticated",
+       "evidence_current": false,
+       "evidence_refs": [
+-        "sv-hold:source-design:2445208e7ac2c96b1f009c1c6315e569674c6593063c8d8e6e8b635688ccc110"
++        "fixture:governance-crossing:1421ae378864abfc759f97db2f1c463716d720c7c5ba0a5fad98c1d4418f6bd3"
+       ],
+       "policy_current": true,
+-      "policy_ref": "sv-hold:proposed-test-policy:not-runtime-authenticated",
++      "policy_ref": "fixture:policy:not-runtime-authenticated",
+       "recoverability_profile": "recoverable",
+       "validity_window_open": true
+     },
+     "judgment": {
+       "evidence_refs": [
+-        "sv-hold:source-design:2445208e7ac2c96b1f009c1c6315e569674c6593063c8d8e6e8b635688ccc110"
++        "fixture:governance-crossing:1421ae378864abfc759f97db2f1c463716d720c7c5ba0a5fad98c1d4418f6bd3"
+       ],
+       "isolation_state": "supported",
+       "operator_recoverability": "available",
+@@ -125,20 +111,20 @@
+     "permission_present": false,
+     "signal": {
+       "admitted_signal_refs": [
+-        "sv-hold:source-design:2445208e7ac2c96b1f009c1c6315e569674c6593063c8d8e6e8b635688ccc110"
++        "fixture:governance-crossing:1421ae378864abfc759f97db2f1c463716d720c7c5ba0a5fad98c1d4418f6bd3"
+       ],
+       "excluded_signal_refs": [],
+-      "expected_reference_state_hash": "2445208e7ac2c96b1f009c1c6315e569674c6593063c8d8e6e8b635688ccc110",
++      "expected_reference_state_hash": "1421ae378864abfc759f97db2f1c463716d720c7c5ba0a5fad98c1d4418f6bd3",
+       "missing_inputs": [
+         "authenticated_current_grant",
+         "authentic_runtime_evidence"
+       ],
+       "reconstruction_available": false,
+-      "reference_state_hash": "2445208e7ac2c96b1f009c1c6315e569674c6593063c8d8e6e8b635688ccc110",
++      "reference_state_hash": "1421ae378864abfc759f97db2f1c463716d720c7c5ba0a5fad98c1d4418f6bd3",
+       "transformation_provenance_complete": true,
+       "transformations": [],
+       "uncertainty_state": "unknown"
+     }
+   },
+-  "source": "StegVerse-org/StegVerse-SDK scripts/experiment_sv_hold_independent.py, condition HOLD_ENTERED"
++  "source": "StegVerse-org/.github governance crossing fixture"
+ }
+diff --git a/tests/fixtures/sdk-manifests/hold-to-boundary-diagnostic.json b/tests/fixtures/sdk-manifests/governance-to-boundary-diagnostic.json
+similarity index 62%
+rename from tests/fixtures/sdk-manifests/hold-to-boundary-diagnostic.json
+rename to tests/fixtures/sdk-manifests/governance-to-boundary-diagnostic.json
+index 227b59f..e25bc4d 100644
+--- a/tests/fixtures/sdk-manifests/hold-to-boundary-diagnostic.json
++++ b/tests/fixtures/sdk-manifests/governance-to-boundary-diagnostic.json
+@@ -1,14 +1,13 @@
+ {
+   "attestation": null,
+   "candidate": {
+-    "action": "evaluate_bounded_hold_operation",
++    "action": "evaluate_governance_crossing_fixture",
+     "actor_class": "sdk_evaluator",
+     "parameters": {
+-      "external_side_effect": false,
+-      "relative_time": "T1"
++      "external_side_effect": false
+     },
+-    "scope": "isolated_experiment",
+-    "target": "SV-HOLD-INDEPENDENT-BASELINE-20260926:HOLD_ENTERED"
++    "scope": "isolated_fixture",
++    "target": "GOVERNANCE-CROSSING-FIXTURE-001"
+   },
+   "canonicalization_profile": "steggate.jcs.v1",
+   "completion": {
+@@ -20,7 +19,7 @@
+     },
+     "initiator": {
+       "class": "external_framework",
+-      "ref": "StegVerse-independent-evaluator"
++      "ref": "StegVerse-org-boundary-fixture"
+     },
+     "publisher": {
+       "package_profile": "stegverse.publisher.evidence-report-package/v1",
+@@ -30,7 +29,7 @@
+   },
+   "context_refs": [],
+   "created_at": "2026-09-26T00:00:00Z",
+-  "declared_intent": "Independently qualify a proposed governed HOLD transition",
++  "declared_intent": "Carry a governance manifest across the organization boundary",
+   "extensions": {
+     "capability_resolution": {
+       "authority_effect": "NONE_CLASSIFICATION_ONLY",
+@@ -52,20 +51,19 @@
+       "route_id": "stegverse.route.canonical-governed.v1",
+       "source_semantic_custody": "EXTERNAL"
+     },
+-    "source_data_class": "sv.hold.independent.source-only.v1",
++    "source_data_class": "sv.governance.crossing-fixture.v1",
+     "stegverse_governance_request": {
+       "approval": {
+         "required": true
+       },
+       "candidate": {
+-        "action": "evaluate_bounded_hold_operation",
++        "action": "evaluate_governance_crossing_fixture",
+         "actor_class": "sdk_evaluator",
+         "parameters": {
+-          "external_side_effect": false,
+-          "relative_time": "T1"
++          "external_side_effect": false
+         },
+-        "scope": "isolated_experiment",
+-        "target": "SV-HOLD-INDEPENDENT-BASELINE-20260926:HOLD_ENTERED"
++        "scope": "isolated_fixture",
++        "target": "GOVERNANCE-CROSSING-FIXTURE-001"
+       },
+       "capability": {
+         "allowed": true
+@@ -75,10 +73,8 @@
+       },
+       "declared_context": {
+         "authority_evidence_status": "NOT_AUTHENTICATED",
+-        "condition_id": "HOLD_ENTERED",
+         "no_external_effect": true,
+         "other_framework_evidence_used": false,
+-        "relative_time": "T1",
+         "semantic_status": "UNRESOLVED",
+         "source_only": true
+       },
+@@ -86,19 +82,19 @@
+         "actor_authority_current": false,
+         "affected_entity_conditions_represented": true,
+         "delegation_current": false,
+-        "delegation_ref": "sv-hold:proposed-test-delegation:not-runtime-authenticated",
++        "delegation_ref": "fixture:delegation:not-runtime-authenticated",
+         "evidence_current": false,
+         "evidence_refs": [
+-          "sv-hold:source-design:2445208e7ac2c96b1f009c1c6315e569674c6593063c8d8e6e8b635688ccc110"
++          "fixture:governance-crossing:1421ae378864abfc759f97db2f1c463716d720c7c5ba0a5fad98c1d4418f6bd3"
+         ],
+         "policy_current": true,
+-        "policy_ref": "sv-hold:proposed-test-policy:not-runtime-authenticated",
++        "policy_ref": "fixture:policy:not-runtime-authenticated",
+         "recoverability_profile": "recoverable",
+         "validity_window_open": true
+       },
+       "judgment": {
+         "evidence_refs": [
+-          "sv-hold:source-design:2445208e7ac2c96b1f009c1c6315e569674c6593063c8d8e6e8b635688ccc110"
++          "fixture:governance-crossing:1421ae378864abfc759f97db2f1c463716d720c7c5ba0a5fad98c1d4418f6bd3"
+         ],
+         "isolation_state": "supported",
+         "operator_recoverability": "available",
+@@ -109,16 +105,16 @@
+       "permission_present": false,
+       "signal": {
+         "admitted_signal_refs": [
+-          "sv-hold:source-design:2445208e7ac2c96b1f009c1c6315e569674c6593063c8d8e6e8b635688ccc110"
++          "fixture:governance-crossing:1421ae378864abfc759f97db2f1c463716d720c7c5ba0a5fad98c1d4418f6bd3"
+         ],
+         "excluded_signal_refs": [],
+-        "expected_reference_state_hash": "2445208e7ac2c96b1f009c1c6315e569674c6593063c8d8e6e8b635688ccc110",
++        "expected_reference_state_hash": "1421ae378864abfc759f97db2f1c463716d720c7c5ba0a5fad98c1d4418f6bd3",
+         "missing_inputs": [
+           "authenticated_current_grant",
+           "authentic_runtime_evidence"
+         ],
+         "reconstruction_available": false,
+-        "reference_state_hash": "2445208e7ac2c96b1f009c1c6315e569674c6593063c8d8e6e8b635688ccc110",
++        "reference_state_hash": "1421ae378864abfc759f97db2f1c463716d720c7c5ba0a5fad98c1d4418f6bd3",
+         "transformation_provenance_complete": true,
+         "transformations": [],
+         "uncertainty_state": "unknown"
+@@ -135,8 +131,8 @@
+   },
+   "freshness": {},
+   "hashes": {
+-    "candidate_sha256": "2f83659ec56b7c20295a91262c7f7b551daab0d9197ca9ee0020674cda51ca2f",
+-    "payload_sha256": "2445208e7ac2c96b1f009c1c6315e569674c6593063c8d8e6e8b635688ccc110"
++    "candidate_sha256": "315ddd71dba54e94dd8ef8772af2c77c0033b9665efe5400235d2e18ef531770",
++    "payload_sha256": "1421ae378864abfc759f97db2f1c463716d720c7c5ba0a5fad98c1d4418f6bd3"
+   },
+   "manifest_labels": {
+     "mode": "NONE"
+@@ -151,31 +147,20 @@
+       "permission_present": false,
+       "validity_window_open": true
+     },
+-    "condition_id": "HOLD_ENTERED",
+-    "evidence_class": "INDEPENDENT_SV_EXPERIMENT_DESIGN_NOT_NATIVE_RUNTIME",
+-    "expected_evidence": [
+-      "actual_intr_admissibility_snapshot",
+-      "original_protected_operation_effect_or_prevention",
+-      "predecessor_linked_organization_receipts",
+-      "applicable_master_records_reconstruction"
+-    ],
+-    "experiment_id": "SV-HOLD-INDEPENDENT-BASELINE-20260926",
+-    "native_stev_inference": null,
+-    "other_framework_output_consumed": false,
+-    "protected_operation": "bounded_no_external_side_effect_test",
+-    "relative_time": "T1",
+-    "temporal_sampling": "EXPERIMENT_RELATIVE_ONLY_NOT_MEASURED"
++    "external_side_effect": false,
++    "fixture_id": "GOVERNANCE-CROSSING-FIXTURE-001",
++    "purpose": "boundary crossing of a governance manifest that carries no authenticated grant"
+   },
+   "processing": {
+     "capability": "governance",
+     "route_id": "stegverse.route.canonical-governed.v1"
+   },
+-  "requested_consequence": "Observe actual disposition and protected effect only if genuinely admitted",
++  "requested_consequence": "Observe the governance disposition only if genuinely admitted",
+   "return_projection": {
+     "mode": "ALL",
+     "transition_classes": []
+   },
+-  "source_framework": "StegVerse-independent-evaluator",
++  "source_framework": "StegVerse-org-boundary-fixture",
+   "source_instance": null,
+-  "source_output_id": "SV-HOLD-INDEPENDENT-BASELINE-20260926:HOLD_ENTERED"
++  "source_output_id": "GOVERNANCE-CROSSING-FIXTURE-001"
+ }
+diff --git a/tests/fixtures/sdk-manifests/hold-to-llm-adapter.json b/tests/fixtures/sdk-manifests/governance-to-llm-adapter.json
+similarity index 62%
+rename from tests/fixtures/sdk-manifests/hold-to-llm-adapter.json
+rename to tests/fixtures/sdk-manifests/governance-to-llm-adapter.json
+index 1398047..9a5b0d4 100644
+--- a/tests/fixtures/sdk-manifests/hold-to-llm-adapter.json
++++ b/tests/fixtures/sdk-manifests/governance-to-llm-adapter.json
+@@ -1,14 +1,13 @@
+ {
+   "attestation": null,
+   "candidate": {
+-    "action": "evaluate_bounded_hold_operation",
++    "action": "evaluate_governance_crossing_fixture",
+     "actor_class": "sdk_evaluator",
+     "parameters": {
+-      "external_side_effect": false,
+-      "relative_time": "T1"
++      "external_side_effect": false
+     },
+-    "scope": "isolated_experiment",
+-    "target": "SV-HOLD-INDEPENDENT-BASELINE-20260926:HOLD_ENTERED"
++    "scope": "isolated_fixture",
++    "target": "GOVERNANCE-CROSSING-FIXTURE-001"
+   },
+   "canonicalization_profile": "steggate.jcs.v1",
+   "completion": {
+@@ -20,7 +19,7 @@
+     },
+     "initiator": {
+       "class": "external_framework",
+-      "ref": "StegVerse-independent-evaluator"
++      "ref": "StegVerse-org-boundary-fixture"
+     },
+     "publisher": {
+       "package_profile": "stegverse.publisher.evidence-report-package/v1",
+@@ -30,7 +29,7 @@
+   },
+   "context_refs": [],
+   "created_at": "2026-09-26T00:00:00Z",
+-  "declared_intent": "Independently qualify a proposed governed HOLD transition",
++  "declared_intent": "Carry a governance manifest across the organization boundary",
+   "extensions": {
+     "capability_resolution": {
+       "authority_effect": "NONE_CLASSIFICATION_ONLY",
+@@ -52,20 +51,19 @@
+       "route_id": "stegverse.route.canonical-governed.v1",
+       "source_semantic_custody": "EXTERNAL"
+     },
+-    "source_data_class": "sv.hold.independent.source-only.v1",
++    "source_data_class": "sv.governance.crossing-fixture.v1",
+     "stegverse_governance_request": {
+       "approval": {
+         "required": true
+       },
+       "candidate": {
+-        "action": "evaluate_bounded_hold_operation",
++        "action": "evaluate_governance_crossing_fixture",
+         "actor_class": "sdk_evaluator",
+         "parameters": {
+-          "external_side_effect": false,
+-          "relative_time": "T1"
++          "external_side_effect": false
+         },
+-        "scope": "isolated_experiment",
+-        "target": "SV-HOLD-INDEPENDENT-BASELINE-20260926:HOLD_ENTERED"
++        "scope": "isolated_fixture",
++        "target": "GOVERNANCE-CROSSING-FIXTURE-001"
+       },
+       "capability": {
+         "allowed": true
+@@ -75,10 +73,8 @@
+       },
+       "declared_context": {
+         "authority_evidence_status": "NOT_AUTHENTICATED",
+-        "condition_id": "HOLD_ENTERED",
+         "no_external_effect": true,
+         "other_framework_evidence_used": false,
+-        "relative_time": "T1",
+         "semantic_status": "UNRESOLVED",
+         "source_only": true
+       },
+@@ -86,19 +82,19 @@
+         "actor_authority_current": false,
+         "affected_entity_conditions_represented": true,
+         "delegation_current": false,
+-        "delegation_ref": "sv-hold:proposed-test-delegation:not-runtime-authenticated",
++        "delegation_ref": "fixture:delegation:not-runtime-authenticated",
+         "evidence_current": false,
+         "evidence_refs": [
+-          "sv-hold:source-design:2445208e7ac2c96b1f009c1c6315e569674c6593063c8d8e6e8b635688ccc110"
++          "fixture:governance-crossing:1421ae378864abfc759f97db2f1c463716d720c7c5ba0a5fad98c1d4418f6bd3"
+         ],
+         "policy_current": true,
+-        "policy_ref": "sv-hold:proposed-test-policy:not-runtime-authenticated",
++        "policy_ref": "fixture:policy:not-runtime-authenticated",
+         "recoverability_profile": "recoverable",
+         "validity_window_open": true
+       },
+       "judgment": {
+         "evidence_refs": [
+-          "sv-hold:source-design:2445208e7ac2c96b1f009c1c6315e569674c6593063c8d8e6e8b635688ccc110"
++          "fixture:governance-crossing:1421ae378864abfc759f97db2f1c463716d720c7c5ba0a5fad98c1d4418f6bd3"
+         ],
+         "isolation_state": "supported",
+         "operator_recoverability": "available",
+@@ -109,16 +105,16 @@
+       "permission_present": false,
+       "signal": {
+         "admitted_signal_refs": [
+-          "sv-hold:source-design:2445208e7ac2c96b1f009c1c6315e569674c6593063c8d8e6e8b635688ccc110"
++          "fixture:governance-crossing:1421ae378864abfc759f97db2f1c463716d720c7c5ba0a5fad98c1d4418f6bd3"
+         ],
+         "excluded_signal_refs": [],
+-        "expected_reference_state_hash": "2445208e7ac2c96b1f009c1c6315e569674c6593063c8d8e6e8b635688ccc110",
++        "expected_reference_state_hash": "1421ae378864abfc759f97db2f1c463716d720c7c5ba0a5fad98c1d4418f6bd3",
+         "missing_inputs": [
+           "authenticated_current_grant",
+           "authentic_runtime_evidence"
+         ],
+         "reconstruction_available": false,
+-        "reference_state_hash": "2445208e7ac2c96b1f009c1c6315e569674c6593063c8d8e6e8b635688ccc110",
++        "reference_state_hash": "1421ae378864abfc759f97db2f1c463716d720c7c5ba0a5fad98c1d4418f6bd3",
+         "transformation_provenance_complete": true,
+         "transformations": [],
+         "uncertainty_state": "unknown"
+@@ -135,8 +131,8 @@
+   },
+   "freshness": {},
+   "hashes": {
+-    "candidate_sha256": "2f83659ec56b7c20295a91262c7f7b551daab0d9197ca9ee0020674cda51ca2f",
+-    "payload_sha256": "2445208e7ac2c96b1f009c1c6315e569674c6593063c8d8e6e8b635688ccc110"
++    "candidate_sha256": "315ddd71dba54e94dd8ef8772af2c77c0033b9665efe5400235d2e18ef531770",
++    "payload_sha256": "1421ae378864abfc759f97db2f1c463716d720c7c5ba0a5fad98c1d4418f6bd3"
+   },
+   "manifest_labels": {
+     "mode": "NONE"
+@@ -151,31 +147,20 @@
+       "permission_present": false,
+       "validity_window_open": true
+     },
+-    "condition_id": "HOLD_ENTERED",
+-    "evidence_class": "INDEPENDENT_SV_EXPERIMENT_DESIGN_NOT_NATIVE_RUNTIME",
+-    "expected_evidence": [
+-      "actual_intr_admissibility_snapshot",
+-      "original_protected_operation_effect_or_prevention",
+-      "predecessor_linked_organization_receipts",
+-      "applicable_master_records_reconstruction"
+-    ],
+-    "experiment_id": "SV-HOLD-INDEPENDENT-BASELINE-20260926",
+-    "native_stev_inference": null,
+-    "other_framework_output_consumed": false,
+-    "protected_operation": "bounded_no_external_side_effect_test",
+-    "relative_time": "T1",
+-    "temporal_sampling": "EXPERIMENT_RELATIVE_ONLY_NOT_MEASURED"
++    "external_side_effect": false,
++    "fixture_id": "GOVERNANCE-CROSSING-FIXTURE-001",
++    "purpose": "boundary crossing of a governance manifest that carries no authenticated grant"
+   },
+   "processing": {
+     "capability": "governance",
+     "route_id": "stegverse.route.canonical-governed.v1"
+   },
+-  "requested_consequence": "Observe actual disposition and protected effect only if genuinely admitted",
++  "requested_consequence": "Observe the governance disposition only if genuinely admitted",
+   "return_projection": {
+     "mode": "ALL",
+     "transition_classes": []
+   },
+-  "source_framework": "StegVerse-independent-evaluator",
++  "source_framework": "StegVerse-org-boundary-fixture",
+   "source_instance": null,
+-  "source_output_id": "SV-HOLD-INDEPENDENT-BASELINE-20260926:HOLD_ENTERED"
++  "source_output_id": "GOVERNANCE-CROSSING-FIXTURE-001"
+ }
+diff --git a/tests/fixtures/sdk-manifests/task-registry-disclosure-to-llm-adapter.json b/tests/fixtures/sdk-manifests/task-registry-disclosure-to-llm-adapter.json
+index 64b3437..df86cb5 100644
+--- a/tests/fixtures/sdk-manifests/task-registry-disclosure-to-llm-adapter.json
++++ b/tests/fixtures/sdk-manifests/task-registry-disclosure-to-llm-adapter.json
+@@ -10,7 +10,7 @@
+     },
+     "initiator": {
+       "class": "external_framework",
+-      "ref": "StegVerse-independent-evaluator"
++      "ref": "StegVerse-org-boundary-fixture"
+     },
+     "publisher": {
+       "package_profile": "stegverse.publisher.evidence-report-package/v1",
+@@ -42,7 +42,7 @@
+       "route_id": "stegverse.route.ecosystem-diagnostic.v1",
+       "source_semantic_custody": "EXTERNAL"
+     },
+-    "source_data_class": "sv.hold.independent.source-only.v1",
++    "source_data_class": "sv.governance.crossing-fixture.v1",
+     "stegverse_ecosystem_diagnostic_request": {
+       "diagnostic_request_id": "TASK-REGISTRY-DISCLOSURE-001",
+       "expected_evidence_fields": [
+@@ -74,7 +74,7 @@
+   },
+   "freshness": {},
+   "hashes": {
+-    "payload_sha256": "2445208e7ac2c96b1f009c1c6315e569674c6593063c8d8e6e8b635688ccc110"
++    "payload_sha256": "1421ae378864abfc759f97db2f1c463716d720c7c5ba0a5fad98c1d4418f6bd3"
+   },
+   "manifest_labels": {
+     "mode": "NONE"
+@@ -89,20 +89,9 @@
+       "permission_present": false,
+       "validity_window_open": true
+     },
+-    "condition_id": "HOLD_ENTERED",
+-    "evidence_class": "INDEPENDENT_SV_EXPERIMENT_DESIGN_NOT_NATIVE_RUNTIME",
+-    "expected_evidence": [
+-      "actual_intr_admissibility_snapshot",
+-      "original_protected_operation_effect_or_prevention",
+-      "predecessor_linked_organization_receipts",
+-      "applicable_master_records_reconstruction"
+-    ],
+-    "experiment_id": "SV-HOLD-INDEPENDENT-BASELINE-20260926",
+-    "native_stev_inference": null,
+-    "other_framework_output_consumed": false,
+-    "protected_operation": "bounded_no_external_side_effect_test",
+-    "relative_time": "T1",
+-    "temporal_sampling": "EXPERIMENT_RELATIVE_ONLY_NOT_MEASURED"
++    "external_side_effect": false,
++    "fixture_id": "GOVERNANCE-CROSSING-FIXTURE-001",
++    "purpose": "boundary crossing of a governance manifest that carries no authenticated grant"
+   },
+   "processing": {
+     "capability": "ecosystem_diagnostic",
+@@ -113,7 +102,7 @@
+     "mode": "ALL",
+     "transition_classes": []
+   },
+-  "source_framework": "StegVerse-independent-evaluator",
++  "source_framework": "StegVerse-org-boundary-fixture",
+   "source_instance": null,
+   "source_output_id": "TASK-REGISTRY-DISCLOSURE-001:CURRENT"
+ }
+diff --git a/tests/test_boundary_processing_selection.py b/tests/test_boundary_processing_selection.py
+index f43904c..93a5c8a 100644
+--- a/tests/test_boundary_processing_selection.py
++++ b/tests/test_boundary_processing_selection.py
+@@ -340,18 +340,22 @@ class LiveRegistryTests(unittest.TestCase):
+     def test_no_live_internal_endpoint_silently_admits_everything(self):
+         """An INTERNAL_ENDPOINT must refuse a pair it did not declare.
+ 
+-        This holds for a row with no admission list, which admits nothing, and
+-        equally for the one row that now admits a pair: `governance` on the
+-        canonical-governed route is not that pair, so every internal endpoint
+-        in this registry refuses it.
++        `governance` on the canonical-governed route is admitted by exactly one
++        row, the organization's governance processor. Every other internal
++        endpoint refuses it.
+         """
+         endpoints = [s for s in self.registry["services"]
+                      if s.get("boundary_role") == "INTERNAL_ENDPOINT"]
+         self.assertTrue(endpoints, "registry exposes no internal endpoint")
++        declared = manifest("governance", GOVERNANCE_ROUTE)
+         for row in endpoints:
+             with self.subTest(service=row["service_id"]):
++                if row["service_id"] == "stegverse-org.governance":
++                    self.assertIs(selection.select_processing(row, declared)
++                                  ["declared_capability_processed"], True)
++                    continue
+                 with self.assertRaises(SystemExit):
+-                    selection.select_processing(row, manifest("governance", GOVERNANCE_ROUTE))
++                    selection.select_processing(row, declared)
+ 
+     def test_the_boundary_local_surfaces_declare_no_admission_they_never_consult(self):
+         """A boundary-local row is the processor; an admission list there is inert."""
+diff --git a/tests/test_sdk_manifest_crossing.py b/tests/test_sdk_manifest_crossing.py
+index 0a6c39d..ce315e1 100644
+--- a/tests/test_sdk_manifest_crossing.py
++++ b/tests/test_sdk_manifest_crossing.py
+@@ -6,7 +6,7 @@ over `INTERLOCK_INTR` with `far_side_transition_required` -- and then stops,
+ because it holds no transport client and a test asserts the transport names
+ stay gone. This organization's boundary can complete a full InTr crossing, with
+ the five-receipt chain and a reconstructable terminal receipt, but nothing ever
+-handed it an SDK manifest. So every HOLD and Test-5 run ended at a prepared
++handed it an SDK manifest. So every SDK manifest run ended at a prepared
+ handoff and the declared far side was never reached by anything.
+ 
+ `resident-runtime/sdk_manifest_crossing.py` is the join. These cases drive it
+@@ -65,13 +65,13 @@ class FixtureTests(unittest.TestCase):
+ 
+     def test_the_llm_adapter_fixture_carries_the_sdk_default_surface(self):
+         """If the SDK's default stops being LLM_ADAPTER, the gap case is stale."""
+-        egress = manifest("hold-to-llm-adapter")["completion"]["egress"]
++        egress = manifest("governance-to-llm-adapter")["completion"]["egress"]
+         self.assertEqual(egress["final_stegverse_transition_surface"], "LLM_ADAPTER")
+ 
+ 
+ class DeclaredDestinationTests(unittest.TestCase):
+     def test_the_destination_is_read_from_the_manifest(self):
+-        destination = bridge.declared_destination(manifest("hold-to-boundary-diagnostic"))
++        destination = bridge.declared_destination(manifest("governance-to-boundary-diagnostic"))
+         self.assertEqual(destination["surface"], "BOUNDARY_DIAGNOSTIC")
+         self.assertEqual(destination["transport"], "INTERLOCK_INTR")
+         self.assertIs(destination["far_side_transition_required"], True)
+@@ -137,7 +137,7 @@ class CompleteCrossingTests(unittest.TestCase):
+ 
+     @classmethod
+     def setUpClass(cls):
+-        cls.source = manifest("hold-to-boundary-diagnostic")
++        cls.source = manifest("governance-to-boundary-diagnostic")
+         cls.result = bridge.cross(cls.source, standing=GENESIS, packet_id="sdk-manifest-crossing-test")
+ 
+     def test_the_crossing_completes_and_is_reconstructable(self):
+@@ -155,7 +155,7 @@ class CompleteCrossingTests(unittest.TestCase):
+     def test_the_egress_returns_to_the_declaring_origin(self):
+         egress = self.result["egress"]
+         self.assertEqual(egress["destination"]["service"], "stegverse-org.stegverse-sdk")
+-        self.assertEqual(egress["origin"]["service"], "stegverse-org.boundary-diagnostic")
++        self.assertEqual(egress["origin"]["service"], "stegverse-org.governance")
+ 
+     def test_the_egress_names_every_receipt_as_evidence(self):
+         evidence = self.result["egress"]["evidence"]
+@@ -164,11 +164,12 @@ class CompleteCrossingTests(unittest.TestCase):
+             self.assertTrue(evidence[key], key)
+ 
+     def test_the_manifest_that_arrived_is_the_manifest_that_was_declared(self):
+-        """A crossing that delivered a different manifest is not this crossing."""
+-        far_side = (self.result["egress"]["payload"]["execution_result"]
+-                    ["application_result"]["echo"])
+-        self.assertEqual(far_side["manifest"], self.source)
+-        self.assertEqual(far_side["manifest_sha256"], self.result["manifest_sha256"])
++        """The far side decided the governance request this manifest carries."""
++        decision = (self.result["egress"]["payload"]["execution_result"]
++                    ["application_result"])
++        request = self.source["extensions"]["stegverse_governance_request"]
++        self.assertEqual(decision["governance_request_sha256"], bridge.sha(request))
++        self.assertIn(decision["disposition"], {"ALLOW", "DENY", "FAIL_CLOSED"})
+         self.assertEqual(self.result["manifest_sha256"], "sha256:" + bridge.sha(self.source))
+ 
+     def test_the_crossing_claims_no_authority_the_manifest_did_not_declare(self):
+@@ -190,9 +191,8 @@ class CompleteCrossingTests(unittest.TestCase):
+         processing = self.source["processing"]
+         self.assertEqual(self.result["declared_capability"], processing["capability"])
+         self.assertEqual(self.result["declared_route_id"], processing["route_id"])
+-        self.assertEqual(self.result["processing_selection"],
+-                         "BOUNDARY_LOCAL_NO_PROCESSOR_SELECTED")
+-        self.assertIs(self.result["declared_capability_processed"], False)
++        self.assertEqual(self.result["processing_selection"], "MANIFEST_DECLARED")
++        self.assertIs(self.result["declared_capability_processed"], True)
+ 
+     def test_the_result_never_claims_the_boundary_resolved_the_route(self):
+         """Route installation belongs to the SDK; the boundary holds no route table."""
+@@ -205,46 +205,33 @@ class CompleteCrossingTests(unittest.TestCase):
+         self.assertEqual(again["manifest_sha256"], self.result["manifest_sha256"])
+ 
+ 
+-class UnadmittedPairAtAnInstalledFarSideTests(unittest.TestCase):
+-    """The refusal is now semantic, not structural, and must stay a refusal.
++class GovernanceReturningOverTheTransportTests(unittest.TestCase):
++    """A governance manifest whose result returns over LLM-adapter is decided, not refused.
+ 
+-    This case used to assert a gap: `stegverse-org.llm-adapter` carried no
+-    endpoint adapter, so the crossing stopped before one was sought. That gap
+-    has closed -- the surface now serves `ecosystem_diagnostic` bound to
+-    the diagnostic route, covered in `tests/test_task_registry_disclosure_endpoint.py`.
+-
+-    What this fixture declares is `governance` on the canonical-governed route,
+-    which the service does *not* admit. So the interesting assertion changed
+-    rather than disappeared: an installed far side with a working adapter still
+-    refuses a pair it never declared, and refuses it before the adapter runs.
+-    An installed adapter must not become a reason to serve anything addressed
+-    to it.
++    `completion.egress` names the return path. LLM-adapter is the transport
++    between an LLM and the SDK, so addressing it for processing handed a
++    governance manifest to a service that admits only `ecosystem_diagnostic`, and
++    every such run was refused. Processing is selected by the declared
++    capability and route, so the governance processor decides it and the return
++    surface stays what the manifest declared.
+     """
+ 
+     @classmethod
+     def setUpClass(cls):
+-        cls.result = bridge.cross(manifest("hold-to-llm-adapter"), standing=GENESIS,
++        cls.result = bridge.cross(manifest("governance-to-llm-adapter"), standing=GENESIS,
+                                   packet_id="sdk-manifest-crossing-gap")
+ 
+-    def test_the_surface_resolves_but_the_crossing_does_not_complete(self):
++    def test_the_return_surface_is_kept_and_the_governance_processor_decides(self):
+         self.assertEqual(self.result["declared_transition_surface"], "LLM_ADAPTER")
+-        self.assertEqual(self.result["resolved_service_id"], "stegverse-org.llm-adapter")
+-        self.assertIs(self.result["crossing_completed"], False)
+-
+-    def test_the_result_names_the_unadmitted_capability(self):
+-        self.assertEqual(self.result["far_side_disposition"],
+-                         "declared-capability-not-admitted-by-service:governance")
+-
+-    def test_an_installed_adapter_does_not_make_the_surface_serve_anything(self):
+-        """The adapter is present and was still never reached."""
+-        self.assertIs(self.result["endpoint_adapter_installed"], True)
+-        self.assertEqual(self.result["profile_status"],
+-                         "NEEDS_REPOSITORY_HANDOFF_RECONCILIATION")
++        self.assertEqual(self.result["resolved_service_id"], "stegverse-org.governance")
++        self.assertIs(self.result["crossing_completed"], True)
++        self.assertEqual(self.result["processing_selection"], "MANIFEST_DECLARED")
+ 
+-    def test_an_attempt_reports_no_consumption_and_no_receipts(self):
+-        for key in ("consumed", "reconstruction", "receipts", "terminal_receipt_id", "egress"):
+-            self.assertNotIn(key, self.result)
+-        self.assertEqual(self.result["authority_effect"], "NONE_CROSSING_ATTEMPT_ONLY")
++    def test_the_decision_is_a_governance_disposition(self):
++        decision = self.result["application_result"]
++        self.assertEqual(decision["decision_authority"], "stegcore.steggate.evaluate_admissibility")
++        self.assertIn(decision["disposition"], {"ALLOW", "DENY", "FAIL_CLOSED"})
++        self.assertEqual(decision["authority_effect"], "NONE_DECISION_ONLY")
+ 
+     def test_the_registry_admits_one_pair_and_this_fixture_is_not_it(self):
+         llm = service("stegverse-org.llm-adapter")
+@@ -252,7 +239,7 @@ class UnadmittedPairAtAnInstalledFarSideTests(unittest.TestCase):
+         self.assertEqual(llm["admits_processing"],
+                          [{"capability": "ecosystem_diagnostic",
+                            "route_id": "stegverse.route.ecosystem-diagnostic.v1"}])
+-        declared = manifest("hold-to-llm-adapter")["processing"]
++        declared = manifest("governance-to-llm-adapter")["processing"]
+         self.assertNotIn({"capability": declared["capability"],
+                           "route_id": declared["route_id"]},
+                          llm["admits_processing"])
+diff --git a/tests/test_sdk_manifest_crossing_fidelity.py b/tests/test_sdk_manifest_crossing_fidelity.py
+index a97019d..6107677 100644
+--- a/tests/test_sdk_manifest_crossing_fidelity.py
++++ b/tests/test_sdk_manifest_crossing_fidelity.py
+@@ -124,7 +124,7 @@ class LiveSdkManifestCrossingTests(unittest.TestCase):
+ 
+     @classmethod
+     def setUpClass(cls):
+-        cls.manifest = builder.rebuild()["hold-to-boundary-diagnostic"]
++        cls.manifest = builder.rebuild()["governance-to-boundary-diagnostic"]
+ 
+     def test_a_freshly_built_sdk_manifest_crosses_the_boundary(self):
+         result = bridge.cross(self.manifest, standing=GENESIS, packet_id="live-sdk-manifest-crossing")
+@@ -136,10 +136,11 @@ class LiveSdkManifestCrossingTests(unittest.TestCase):
+ 
+     def test_the_manifest_the_sdk_built_is_the_manifest_that_arrived(self):
+         result = bridge.cross(self.manifest, standing=GENESIS, packet_id="live-sdk-manifest-crossing")
+-        far_side = (result["egress"]["payload"]["execution_result"]
+-                    ["application_result"]["echo"])
+-        self.assertEqual(far_side["manifest"], self.manifest)
+-        self.assertEqual(far_side["manifest_sha256"], result["manifest_sha256"])
++        decision = (result["egress"]["payload"]["execution_result"]
++                    ["application_result"])
++        self.assertEqual(decision["governance_request_sha256"],
++                         bridge.sha(self.manifest["extensions"]["stegverse_governance_request"]))
++        self.assertEqual(result["manifest_sha256"], "sha256:" + bridge.sha(self.manifest))
+ 
+     def test_the_sdk_declared_far_side_is_the_surface_that_was_crossed_to(self):
+         canonical = validate_ingress_manifest(self.manifest)
+@@ -147,7 +148,8 @@ class LiveSdkManifestCrossingTests(unittest.TestCase):
+         result = bridge.cross(self.manifest, standing=GENESIS, packet_id="live-sdk-manifest-crossing")
+         self.assertEqual(result["declared_transition_surface"],
+                          sdk["final_stegverse_transition_surface"])
+-        self.assertEqual(result["resolved_service_id"], "stegverse-org.boundary-diagnostic")
++        # The return surface is kept as declared; governance is processed where it is admitted.
++        self.assertEqual(result["resolved_service_id"], "stegverse-org.governance")
+ 
+ 
+ if __name__ == "__main__":
+-- 
+2.43.0
+
