@@ -89,8 +89,9 @@ verify:
 On admission it appends the organization event to `events/org-events.jsonl`,
 advances `control/claims-active.json`, sets the task active, and writes a
 Master Records organization record under
-`workloads/master-records/orchestration/custody/org-allocation/`, shaped after
-the one custody record the repository already holds. The organization event
+`workloads/master-records/orchestration/custody/org-allocation/` (a
+master-records workload path), shaped after the one lifecycle record the
+repository already holds. The organization event
 carries the Master Records reference and record hash, so the two levels are
 linked rather than merely parallel. Admission is idempotent on
 `receipt_sha256`.
@@ -128,7 +129,8 @@ python scripts/admit_org_allocator_transition_receipt.py \
 The admitter sorts by generation, admits contiguously, and stops at the first
 gap. Once generations 3–7 are recorded, `control/claims-active.json` carries
 live claims, the heartbeat issues organization assertions again instead of
-`issued_count: 0`, and each admitted transition lands a Master Records record.
+`issued_count: 0`, and every transition the admitter records also lands a
+Master Records organization record.
 
 That chain is pinned by test, not asserted: `test_no_claims_means_no_assertions`
 shows the current state issues nothing, and `test_admission_restores_assertion_issuance`

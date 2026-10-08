@@ -84,7 +84,10 @@ cross.
   from the current KV source root — the same convention the Workspace
   DEVICE_KV extension uses for `runtime/workspace_projection.py` — and
   persists the terminal receipt, the Master Records organization record and the
-  far-end observation;
+  far-end observation. It reads the KV closure output under the
+  organization-record names and also under the names continuity-vault-kit
+  used before that migration, so a KV source root on either side of the
+  migration closes;
 - `tests/test_stegbrowser_intr_lifecycle_closure_wiring.py` covers it.
 
 The closure logic is not reimplemented in `.github`. One implementation, so
@@ -122,7 +125,9 @@ negative control 2: SDK rejects non-RECORDED ->
   ecosystem could previously set.
 - Idempotent re-run is write-once stable; a tampered retained entry is refused
   with `NODE_OUTBOX_ENTRY_WRITTEN:digest_reconstruction_mismatch`.
-- Patch applied to a pristine clone: 29 tests pass there.
+- Patch applied to a pristine clone: 29 tests pass there. After the
+  organization-record rename the lifecycle tests number 11 and pass against
+  both a pre-migration and a migrated continuity-vault-kit source root.
 - The 10 pre-existing `tests/test_stegbrowser_*` failures in `.github`
   reproduce identically with these changes stashed and are unrelated.
 
