@@ -202,7 +202,7 @@ lists an `OPTIONAL_GENEALOGY_PROVIDER` dependency for relationship-editor /
 share-UI personal services, and the historical-corpus-import path
 (`runtime/historical_corpus_import.py`, `KV_HISTORICAL_CORPUS_IMPORT_MIRROR_HANDOFF.md`)
 already describes owner-authorized historical artifacts producing a
-**Master Records custody-request candidate** — a request that only an
+**Master Records organization-record request candidate** — a request that only an
 independent destination can validate and accept. A genealogy hub confirming
 records via independent corroboration is a natural fit for that kind of
 destination, scoped specifically to genealogical claims rather than

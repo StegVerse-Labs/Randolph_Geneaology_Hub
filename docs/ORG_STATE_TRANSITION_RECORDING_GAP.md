@@ -88,7 +88,7 @@ verify:
 
 On admission it appends the organization event to `events/org-events.jsonl`,
 advances `control/claims-active.json`, sets the task active, and writes a
-Master Records custody record under
+Master Records organization record under
 `workloads/master-records/orchestration/custody/org-allocation/`, shaped after
 the one custody record the repository already holds. The organization event
 carries the Master Records reference and record hash, so the two levels are

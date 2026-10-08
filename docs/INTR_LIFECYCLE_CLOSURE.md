@@ -83,7 +83,7 @@ cross.
 - `workers/close_stegbrowser_intr_lifecycle.py` loads the canonical closure
   from the current KV source root — the same convention the Workspace
   DEVICE_KV extension uses for `runtime/workspace_projection.py` — and
-  persists the terminal receipt, the Master Records custody record and the
+  persists the terminal receipt, the Master Records organization record and the
   far-end observation;
 - `tests/test_stegbrowser_intr_lifecycle_closure_wiring.py` covers it.
 
