@@ -1,9 +1,9 @@
 diff --git a/tests/test_stegbrowser_intr_lifecycle_closure_wiring.py b/tests/test_stegbrowser_intr_lifecycle_closure_wiring.py
 new file mode 100644
-index 00000000..8417ccbb
+index 00000000..783ca53b
 --- /dev/null
 +++ b/tests/test_stegbrowser_intr_lifecycle_closure_wiring.py
-@@ -0,0 +1,175 @@
+@@ -0,0 +1,197 @@
 +"""StegBrowser InTr lifecycle closure wiring.
 +
 +The far end admitted a request, ran a consumer, and stopped at
@@ -73,6 +73,27 @@ index 00000000..8417ccbb
 +    return True
 +
 +
++class OrganizationRecordNames(unittest.TestCase):
++    """The worker reads the KV closure output under the new and the legacy names."""
++
++    def test_new_names(self) -> None:
++        record = {"record_id": "INTR-LIFECYCLE-X", "record_hash": "h"}
++        result = {worker.ORGANIZATION_RECORD_KEY: record}
++        self.assertIs(worker.organization_record_from(result), record)
++        self.assertEqual(worker.organization_record_id(record), "INTR-LIFECYCLE-X")
++
++    def test_legacy_names(self) -> None:
++        record = {worker.LEGACY_ORGANIZATION_RECORD_ID_KEY: "INTR-LIFECYCLE-Y", "record_hash": "h"}
++        result = {worker.LEGACY_ORGANIZATION_RECORD_KEY: record}
++        self.assertIs(worker.organization_record_from(result), record)
++        self.assertEqual(worker.organization_record_id(record), "INTR-LIFECYCLE-Y")
++
++    def test_new_name_wins(self) -> None:
++        new, old = {"record_id": "N"}, {worker.LEGACY_ORGANIZATION_RECORD_ID_KEY: "O"}
++        result = {worker.ORGANIZATION_RECORD_KEY: new, worker.LEGACY_ORGANIZATION_RECORD_KEY: old}
++        self.assertIs(worker.organization_record_from(result), new)
++
++
 +class LifecycleClosureWiring(unittest.TestCase):
 +    def setUp(self) -> None:
 +        if not kv_source_available():
@@ -134,15 +155,16 @@ index 00000000..8417ccbb
 +        self.assertEqual(result["authority_effect"], "NONE_RECORDING_ONLY")
 +        self.assertEqual(result["github_token_runtime_authority"], "NONE")
 +
-+    def test_master_records_custody_record_is_written_under_orchestration(self) -> None:
++    def test_master_records_organization_record_is_written_under_orchestration(self) -> None:
 +        result = self.close()
 +        self.assertTrue(
-+            result["master_records_ref"].startswith(
-+                "workloads/master-records/orchestration/custody/intr-lifecycle/"
-+            )
++            result["master_records_ref"].startswith(str(worker.ORGANIZATION_RECORD_DIR_REL) + "/")
 +        )
 +        record = json.loads((self.runtime / result["master_records_ref"]).read_text(encoding="utf-8"))
-+        self.assertEqual(record["custody"]["status"], "ACCEPTED_FOR_CUSTODY")
++        if "organization_record" in record:
++            self.assertEqual(record["organization_record"]["status"], "RECORDED_AS_ORGANIZATION_RECORD")
++        else:  # KV source root from before the organization-record migration
++            self.assertEqual(record["custody"]["status"], "ACCEPTED_FOR_CUSTODY")
 +        self.assertEqual(record["record_hash"], result["master_records_record_hash"])
 +
 +    def test_closure_is_write_once_and_idempotent(self) -> None:
@@ -181,16 +203,16 @@ index 00000000..8417ccbb
 +    unittest.main()
 diff --git a/workers/close_stegbrowser_intr_lifecycle.py b/workers/close_stegbrowser_intr_lifecycle.py
 new file mode 100644
-index 00000000..d6316f15
+index 00000000..ae92d250
 --- /dev/null
 +++ b/workers/close_stegbrowser_intr_lifecycle.py
-@@ -0,0 +1,192 @@
+@@ -0,0 +1,215 @@
 +#!/usr/bin/env python3
 +"""Close a StegBrowser InTr lifecycle: write the last receipt of the transition.
 +
 +The lane already produced two receipts and stopped: ingress admitted the
 +request, the consumer reported ``MATERIALIZATION_EXECUTION_ATTEMPTED``.
-+Attempted is not recorded, so no Master Records custody receipt existed and no
++Attempted is not recorded, so no Master Records organization record existed and no
 +reconstruction was ever verified. This worker calls the canonical closure
 +implementation in continuity-vault-kit and persists what it returns.
 +
@@ -213,7 +235,7 @@ index 00000000..d6316f15
 +import os
 +import sys
 +from pathlib import Path
-+from typing import Any
++from typing import Any, Mapping
 +
 +ROOT = Path(__file__).resolve().parents[1]
 +
@@ -222,7 +244,16 @@ index 00000000..d6316f15
 +CONSUMPTION_DIR_REL = Path("receipts/sovereign-host/stegbrowser-intr-materialization")
 +TERMINAL_DIR_REL = Path("receipts/sovereign-network/stegbrowser-intr-lifecycle")
 +OBSERVATION_DIR_REL = Path("receipts/sovereign-network/stegbrowser-intr-observation")
-+CUSTODY_DIR_REL = Path("workloads/master-records/orchestration/custody/intr-lifecycle")
++# Workload path owned by master-records/orchestration; the directory name is that
++# repository's and is not renamed here.
++ORGANIZATION_RECORD_DIR_REL = Path("workloads/master-records/orchestration/custody/intr-lifecycle")
++
++ORGANIZATION_RECORD_KEY = "master_records_organization_record_record"
++# continuity-vault-kit's closure emitted these names before the Master Records
++# boundary remediation (MASTER-RECORDS-BULK-SEMANTIC-REMEDIATION-002). They are
++# still read so a KV source root on either side of that migration closes.
++LEGACY_ORGANIZATION_RECORD_KEY = "master_records_custody_record"
++LEGACY_ORGANIZATION_RECORD_ID_KEY = "custody_id"
 +
 +KV_SOURCE_ROOT_ENV = "STEGVERSE_KV_SOURCE_ROOT"
 +KV_REPO_NAME = "continuity-vault-kit"
@@ -306,6 +337,18 @@ index 00000000..d6316f15
 +    return path
 +
 +
++def organization_record_from(result: Mapping[str, Any]) -> dict[str, Any]:
++    if ORGANIZATION_RECORD_KEY in result:
++        return result[ORGANIZATION_RECORD_KEY]
++    return result[LEGACY_ORGANIZATION_RECORD_KEY]
++
++
++def organization_record_id(record: Mapping[str, Any]) -> str:
++    if "record_id" in record:
++        return str(record["record_id"])
++    return str(record[LEGACY_ORGANIZATION_RECORD_ID_KEY])
++
++
 +def close(runtime_root: Path, materialization_id: str, *, source_commit: str) -> dict[str, Any]:
 +    closure = load_closure(kv_source_root())
 +    outbox = load_json(runtime_root / OUTBOX_DIR_REL / f"{materialization_id}.json", "node outbox entry")
@@ -332,11 +375,13 @@ index 00000000..d6316f15
 +        }
 +
 +    receipt = result["terminal_receipt"]
-+    record = result["master_records_custody_record"]
++    record = organization_record_from(result)
 +    observation = result["far_end_observation"]
 +
 +    terminal_path = write_once(runtime_root / TERMINAL_DIR_REL / f"{materialization_id}.json", receipt)
-+    custody_path = write_once(runtime_root / CUSTODY_DIR_REL / f"{record['custody_id']}.json", record)
++    record_path = write_once(
++        runtime_root / ORGANIZATION_RECORD_DIR_REL / f"{organization_record_id(record)}.json", record
++    )
 +    observation_path = write_once(
 +        runtime_root / OBSERVATION_DIR_REL / f"{materialization_id}.json", observation
 +    )
@@ -347,7 +392,7 @@ index 00000000..d6316f15
 +        "materialization_id": materialization_id,
 +        "terminal_receipt_id": receipt["manifest_receipt_id"],
 +        "terminal_receipt_ref": str(terminal_path.relative_to(runtime_root)),
-+        "master_records_ref": str(custody_path.relative_to(runtime_root)),
++        "master_records_ref": str(record_path.relative_to(runtime_root)),
 +        "master_records_record_hash": record["record_hash"],
 +        "far_end_observation_ref": str(observation_path.relative_to(runtime_root)),
 +        "receiver_receipt_observed": observation["receiver_receipt_observed"],

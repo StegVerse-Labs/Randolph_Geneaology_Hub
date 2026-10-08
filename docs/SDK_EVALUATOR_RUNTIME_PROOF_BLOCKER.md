@@ -137,8 +137,8 @@ one script.
 
 This host is not an admitted canonical runtime substrate, and nothing here
 claims the predicate is satisfied, that materialization did or did not occur, or
-that any transition may progress. No governed transition was executed, nothing
-was submitted to Master Records, and no network call was made — the probe stops
+that any transition may progress. No governed transition was executed, no
+Master Records organization record was written, and no network call was made — the probe stops
 at the posture binding by design.
 
 No source or runtime defect is inferred from evidence absence. The two

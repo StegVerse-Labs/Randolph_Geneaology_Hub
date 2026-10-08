@@ -10,7 +10,7 @@ None of them asked the separable question this script answers: what does the
 chain do when it is actually invoked with the canonical source roots present?
 That is source reachability, not evidence absence, and it is mechanical.
 
-Nothing here executes a governed transition, submits to Master Records, reaches
+Nothing here executes a governed transition, writes a Master Records organization record, reaches
 the network, or writes into any repository. It grants no authority and proves no
 runtime materialization: this host is not an admitted canonical substrate.
 

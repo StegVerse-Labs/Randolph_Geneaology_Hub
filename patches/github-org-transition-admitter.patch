@@ -20,10 +20,10 @@ index 09555c35..18078faf 100644
        - name: Validate JSON and JSONL syntax
 diff --git a/scripts/admit_org_allocator_transition_receipt.py b/scripts/admit_org_allocator_transition_receipt.py
 new file mode 100644
-index 00000000..9ff34f25
+index 00000000..29181116
 --- /dev/null
 +++ b/scripts/admit_org_allocator_transition_receipt.py
-@@ -0,0 +1,613 @@
+@@ -0,0 +1,614 @@
 +#!/usr/bin/env python3
 +"""Admit a device/resident organization allocator transition receipt at org level.
 +
@@ -72,13 +72,14 @@ index 00000000..9ff34f25
 +RECEIPT_SCHEMA = "stegverse.org-allocator-portable-receipt/v1"
 +OBSERVATION_SCHEMA = "stegverse.org-claim-grant-observation/v1"
 +ADMISSION_SCHEMA = "stegverse.org-allocator-transition-admission/v1"
-+CUSTODY_SCHEMA = "stegverse.org_allocation_custody.v1"
++ORGANIZATION_RECORD_SCHEMA = "stegverse.org_allocation_organization_record.v1"
 +
 +CLAIMS_REL = Path("control/claims-active.json")
 +QUEUE_REL = Path("control/queue.json")
 +EVENTS_REL = Path("events/org-events.jsonl")
 +TASKS_REL = Path("tasks")
-+CUSTODY_REL = Path("workloads/master-records/orchestration/custody/org-allocation")
++# Workload path owned by master-records/orchestration; its directory name is not renamed here.
++ORGANIZATION_RECORD_REL = Path("workloads/master-records/orchestration/custody/org-allocation")
 +
 +#: Assertions the canonical allocator stamps on every receipt. A receipt that
 +#: disagrees with any of them is not a canonical allocator receipt.
@@ -396,12 +397,12 @@ index 00000000..9ff34f25
 +    return datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
 +
 +
-+def custody_record(decision: Mapping[str, Any], *, source_commit: str) -> dict[str, Any]:
-+    """Project an admitted transition into the Master Records custody shape.
++def organization_record(decision: Mapping[str, Any], *, source_commit: str) -> dict[str, Any]:
++    """Project a recorded allocator transition into a Master Records organization record.
 +
-+    Section layout follows the one custody record this repository already
++    Section layout follows the one lifecycle record this repository already
 +    holds (``stegverse.worker_lifecycle_custody.v2``): source, claim,
-+    validation, custody, boundaries, record_hash.
++    validation, organization record, boundaries, record_hash.
 +    """
 +    task_id = decision["task_id"]
 +    generation = decision["claim_registry_generation"]
@@ -409,8 +410,8 @@ index 00000000..9ff34f25
 +    provenance = decision.get("provenance", {})
 +    ref = f"StegVerse-Labs/.github@{source_commit}:"
 +    record = {
-+        "schema": CUSTODY_SCHEMA,
-+        "custody_id": f"ORG-ALLOCATION-{task_id}-G{generation}-001",
++        "schema": ORGANIZATION_RECORD_SCHEMA,
++        "record_id": f"ORG-ALLOCATION-{task_id}-G{generation}-001",
 +        "source": {
 +            "task_id": task_id,
 +            "repository": "StegVerse-Labs/.github",
@@ -463,8 +464,8 @@ index 00000000..9ff34f25
 +            "generation_contiguous_with_recorded_state": True,
 +            "runtime_execution_claimed": False,
 +        },
-+        "custody": {
-+            "status": "ACCEPTED_FOR_CUSTODY",
++        "organization_record": {
++            "status": "RECORDED_AS_ORGANIZATION_RECORD",
 +            "reconstruction_status": "PASS",
 +            "authority_effect": "NONE",
 +        },
@@ -511,9 +512,9 @@ index 00000000..9ff34f25
 +    task["status"] = "active"
 +    dump_json(task_path, task)
 +
-+    record = custody_record(decision, source_commit=source_commit)
-+    custody_path = root / CUSTODY_REL / f"{record['custody_id']}.json"
-+    dump_json(custody_path, record)
++    record = organization_record(decision, source_commit=source_commit)
++    record_path = root / ORGANIZATION_RECORD_REL / f"{record['record_id']}.json"
++    dump_json(record_path, record)
 +
 +    event = {
 +        "event_id": f"ORG-EVENT-{generation + 1:06d}",
@@ -530,7 +531,7 @@ index 00000000..9ff34f25
 +        "dependency_surfaces": dependency_surfaces(granted),
 +        "receipt_sha256": decision["receipt_sha256"],
 +        "execution_surface": decision.get("execution_surface"),
-+        "master_records_ref": custody_path.relative_to(root).as_posix(),
++        "master_records_ref": record_path.relative_to(root).as_posix(),
 +        "master_records_record_hash": record["record_hash"],
 +        "admission_grants_claim_authority": False,
 +        "allocator_remains_claim_authority": True,
@@ -639,10 +640,10 @@ index 00000000..9ff34f25
 +    raise SystemExit(main())
 diff --git a/tests/test_org_allocator_transition_admission.py b/tests/test_org_allocator_transition_admission.py
 new file mode 100644
-index 00000000..25e58502
+index 00000000..44802438
 --- /dev/null
 +++ b/tests/test_org_allocator_transition_admission.py
-@@ -0,0 +1,326 @@
+@@ -0,0 +1,328 @@
 +"""Organization-level admission of canonical allocator transition receipts.
 +
 +The lane these tests cover is the one that was missing: a transition the
@@ -843,7 +844,9 @@ index 00000000..25e58502
 +        record_path = self.tmp / event["master_records_ref"]
 +        self.assertTrue(record_path.is_file())
 +        record = json.loads(record_path.read_text(encoding="utf-8"))
-+        self.assertEqual(record["schema"], admitter.CUSTODY_SCHEMA)
++        self.assertEqual(record["schema"], admitter.ORGANIZATION_RECORD_SCHEMA)
++        self.assertEqual(record["organization_record"]["status"], "RECORDED_AS_ORGANIZATION_RECORD")
++        self.assertNotIn("custody", record)
 +        self.assertEqual(record["transition"]["transition_id"], "ORG_CLAIMS_GRANTED")
 +        self.assertEqual(record["validation"]["status"], "PASS")
 +        self.assertIs(record["validation"]["runtime_execution_claimed"], False)

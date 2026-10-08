@@ -157,7 +157,7 @@ GOAL = (
     "across any browser session, on any operating system, on any device. "
     "Preserve KV/SKAP Vault as the exclusive user verifier, Interlock/InTr as "
     "transition authority, TV/TVC as credential authority, Master Records as "
-    "custody, and the global invariant that eligible StegOS devices are "
+    "organization records and reconstruction, and the global invariant that eligible StegOS devices are "
     "interchangeable transport nodes with no physical-device identity gate. "
     "Create no second user verifier, no duplicate runtime, no duplicate KV "
     "authority, and no browser-local root of truth for user-visible state."
@@ -370,7 +370,7 @@ RUNTIME_REQUIREMENTS = {
         "browser-kv-projection",
         "interlock-intr-governed-transition",
         "skap-vault-user-verification",
-        "master-records-custody",
+        "master-records-organization-record",
         "cross-platform-browser-runtime",
     ],
     "mutation_required": True,
